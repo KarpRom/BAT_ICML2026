@@ -107,7 +107,13 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
         state_save_path = f'BAT_state_{time_stamp}.pt'
 
     # Data
-    ssl_data = np.array([f.as_posix() for f in Path(args.dataset_dir).glob("**/*.wav")]).astype(np.bytes_)
+    # Matches both extensions: the Cuts_Database smoke-test corpus is .wav, the real
+    # bee corpus built by detection/build_ssl_dataset.py is .flac. librosa.load()
+    # (used in SSLAudioSet, via its soundfile backend) is format-agnostic either way.
+    dataset_dir = Path(args.dataset_dir)
+    ssl_data = np.array(
+        [f.as_posix() for ext in ("*.wav", "*.flac") for f in dataset_dir.glob(f"**/{ext}")]
+    ).astype(np.bytes_)
 
     train_dataset = SSLAudioSet(ssl_data, sr=args.sr)
 
