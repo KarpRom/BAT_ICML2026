@@ -38,6 +38,9 @@ def get_ssl_config() -> argparse.Namespace:
     model_group.add_argument('--decoder-heads', default=12, type=int)
     model_group.add_argument('--decoder-mlp-ratio', default=4, type=int)
     model_group.add_argument('--decoder-dim', type=int)
+    model_group.add_argument('--init-checkpoint', type=str, default=None,
+                             help='Warm-start the student encoder from this checkpoint '
+                                  '(e.g. BAT_base.pt) instead of random init.')
 
     train_group = parser.add_argument_group('Training & Optimization')
     train_group.add_argument('--batch-size', default=48, type=int)

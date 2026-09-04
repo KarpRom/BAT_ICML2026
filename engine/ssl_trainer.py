@@ -130,6 +130,27 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
                           decoder_depth=args.decoder_depth, decoder_heads=args.decoder_heads,
                           decoder_mlp_ratio=args.decoder_mlp_ratio, decoder_dim=args.decoder_dim).to(local_rank)
 
+    if args.init_checkpoint:
+        # Warm-start continued pretraining from a released checkpoint (e.g. BAT_base.pt)
+        # instead of the random init above. Released BAT checkpoints are a flat state
+        # dict of the *whole* MLR_Student (encoder + decoder), with keys prefixed
+        # "student.encoder."/"student.decoder." -- verified directly against
+        # BAT_base.pt: 174 "student.encoder.*" keys, loading with that prefix stripped
+        # into student.encoder gives zero missing/unexpected keys. Only the encoder is
+        # loaded (the decoder is SSL-pretraining-specific scaffolding, not needed for
+        # downstream use, and continued pretraining rebuilds it from scratch here); the
+        # teacher's encoder is then copied from this warm-started student encoder by
+        # the existing line below, same as the from-scratch path.
+        state = torch.load(args.init_checkpoint, map_location=f'cuda:{local_rank}')
+        prefix = 'student.encoder.'
+        encoder_state = {k[len(prefix):]: v for k, v in state.items() if k.startswith(prefix)}
+        missing, unexpected = student.encoder.load_state_dict(encoder_state, strict=False)
+        assert not missing and not unexpected, (
+            f"init_checkpoint mismatch: missing={missing} unexpected={unexpected}"
+        )
+        if is_rank_zero:
+            print(f"Warm-started student encoder from {args.init_checkpoint}")
+
     teacher = MLR_Teacher(input_shape=(args.time_frame_size, args.n_mels),
                           patch_size=(args.patch_size, args.patch_size),
                           dim=args.dim, depth=args.depth, num_heads=args.num_heads, mlp_ratio=args.mlp_ratio,

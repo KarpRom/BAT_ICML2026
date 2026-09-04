@@ -1,0 +1,72 @@
+# Continued BAT pretraining on the bee audio corpus, warm-started from BAT_base.pt.
+#
+# A new file rather than editing configs/ssl.yaml in place, so the original
+# AudioSet-calibrated config stays available as a reference/fallback.
+#
+# dataset_dir and init_checkpoint are deliberately NOT set here -- both are passed as
+# CLI overrides by slurm/pretrain_bat.slurm (get_ssl_config() applies this YAML as
+# argparse defaults, then CLI flags win, so the same config serves both the small
+# Cuts_Database smoke test and the real 500k-clip run without editing this file).
+#
+# ==========================================
+# System & Environment
+# ==========================================
+device: cuda
+# Overridden by the SLURM script (--num-workers "$SLURM_CPUS_PER_TASK") to match
+# whatever --cpus-per-task was actually requested at submission time -- this default
+# only matters if you run pretrain.py directly, outside the SLURM script.
+num_workers: 16
+compile: true
+state_save_path: null  # unused by ssl_trainer.py (it builds its own timestamped save path); kept null to match upstream
+save_interval: 5000    # this one IS read (run_ssl_experiment falls back to saving only once, at the very end, if null)
+
+# ==========================================
+# Data & Features
+# ==========================================
+sr: 16000
+n_fft: 1024
+hop_length: 160
+n_mels: 128
+time_frame_size: 1024  # number of time frames after transforming the waveform into a spectrogram; our 5s bee clips (~498 frames @ 10ms hop) get padded to this ~10.24s window, no cropping needed
+
+# ==========================================
+# Model Architecture
+# ==========================================
+patch_size: 16
+dim: 768
+depth: 12
+num_heads: 12
+mlp_ratio: 4
+decoder_depth: 6
+decoder_heads: 12
+decoder_mlp_ratio: 4
+decoder_dim: 768
+
+# ==========================================
+# Training & Optimization
+# ==========================================
+# Rescaled from configs/ssl.yaml's AudioSet-unbalanced calibration (~2M clips) down to
+# our corpus (~500k clips, roughly 1/4): optimization_steps, lr_warmup_steps, and
+# ema_warmup_steps all divided by ~4, keeping the same relative schedule shape (same
+# fraction of training spent warming up, same effective number of passes over the
+# corpus) rather than reusing the AudioSet step counts unchanged, which would be a much
+# longer schedule relative to our dataset size than BAT's own training was.
+batch_size: 24  # per-GPU; effective batch = batch_size * nproc_per_node (GPUs in the job)
+optimization_steps: 100000
+lr: 5.0e-4
+min_lr: 1.0e-6
+lr_warmup_steps: 13000
+weight_decay: 0.05
+adam_beta1: 0.9
+adam_beta2: 0.95
+ema_warmup_steps: 25000
+ema_decay_start: 0.9998
+ema_decay_end: 0.99999
+grad_accumulation_steps: 1  # simulates a larger batch size on fewer GPUs; e.g. 24*4=96 with grad_accumulation_steps=4
+clip_norm: null  # gradient clip norm
+
+# ==========================================
+# Augmentation & Regularization
+# ==========================================
+mask_ratio: 0.8
+num_views: 16
