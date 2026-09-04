@@ -51,7 +51,7 @@ decoder_dim: 768
 # fraction of training spent warming up, same effective number of passes over the
 # corpus) rather than reusing the AudioSet step counts unchanged, which would be a much
 # longer schedule relative to our dataset size than BAT's own training was.
-batch_size: 24  # per-GPU; effective batch = batch_size * nproc_per_node (GPUs in the job)
+batch_size: 12  # per-GPU; effective batch = batch_size * nproc_per_node (GPUs in the job)
 optimization_steps: 100000
 lr: 5.0e-4
 min_lr: 1.0e-6
@@ -62,7 +62,12 @@ adam_beta2: 0.95
 ema_warmup_steps: 25000
 ema_decay_start: 0.9998
 ema_decay_end: 0.99999
-grad_accumulation_steps: 1  # simulates a larger batch size on fewer GPUs; e.g. 24*4=96 with grad_accumulation_steps=4
+# batch_size=12 * grad_accumulation_steps=2 = same 24-equivalent micro-batch (and same
+# 384 = batch_size*num_views views/optimizer-step) as the original 24/1 split -- halved
+# just to fit a single H100's 80GB: student forward+backward materializes a full
+# (batch_size*num_views, num_heads, N, N) attention matrix per layer (vit.py's Attention
+# doesn't use a fused/flash kernel), which OOM'd at 24/1 with ~78.3/79.2 GiB in use.
+grad_accumulation_steps: 2
 clip_norm: null  # gradient clip norm
 
 # ==========================================
