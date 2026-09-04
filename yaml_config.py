@@ -43,6 +43,12 @@ def get_ssl_config() -> argparse.Namespace:
                                   '(e.g. BAT_base.pt) instead of random init.')
 
     train_group = parser.add_argument_group('Training & Optimization')
+    train_group.add_argument('--resume-checkpoint', type=str, default=None,
+                             help='Resume a stopped run from one of this script\'s own saved '
+                                  'checkpoints (logs/SSL/step(N)_BAT_state_*.pt) -- restores '
+                                  'encoder, decoder, EMA teacher encoder, optimizer, scheduler, '
+                                  'and step count. Takes priority over --init-checkpoint if both '
+                                  'are given.')
     train_group.add_argument('--batch-size', default=48, type=int)
     train_group.add_argument('--optimization-steps', default=400_000, type=int)
     train_group.add_argument('--grad-accumulation-steps', default=1, type=int, help='grad accumulation steps.')

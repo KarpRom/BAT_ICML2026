@@ -12,14 +12,19 @@
 #     sbatch --export=DATA_DIR=/path/to/bbeedeep/data/Cuts_Database/Cuts_Database_ALL_SPECIES pretrain_bat.slurm
 #   Real run, N GPUs, the 500k-clip corpus:
 #     sbatch --export=DATA_DIR=/path/to/500k_corpus --gres=gpu:4 --ntasks-per-node=4 --cpus-per-task=<N> pretrain_bat.slurm
+#   Continuing a run cut off by the time limit: find the latest checkpoint from the
+#   previous job (logs/SSL/step(N)_BAT_state_*.pt, highest N) and pass it as RESUME_CKPT --
+#   this restores optimizer/scheduler/step state too, not just model weights:
+#     sbatch --export=DATA_DIR=/path/to/500k_corpus,RESUME_CKPT=/path/to/logs/SSL/step(50000)_BAT_state_....pt \
+#         --gres=gpu:4 --ntasks-per-node=4 --cpus-per-task=<N> pretrain_bat.slurm
 
 #SBATCH --job-name=bat_ssl_pretrain
-#SBATCH --account=<your_account>@h100      # fill in from your Jean Zay allocation
-#SBATCH -C h100                            # or a100, matching --account above
+#SBATCH --account=soz@h100
+#SBATCH -C h100
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1                # = number of GPUs used; override at submission for multi-GPU
 #SBATCH --gres=gpu:1                       # override at submission for multi-GPU
-#SBATCH --cpus-per-task=16                 # override to match what your account/partition allows per GPU
+#SBATCH --cpus-per-task=24                 # override to match what your account/partition allows per GPU
 #SBATCH --time=20:00:00
 #SBATCH --output=%x_%j.out
 
@@ -37,8 +42,19 @@ fi
 
 cd "$(dirname "$0")/.."  # repo root, so `pretrain.py`/`configs/` resolve regardless of submission cwd
 
+RESUME_ARGS=()
+if [ -n "${RESUME_CKPT:-}" ]; then
+    if [ ! -f "$RESUME_CKPT" ]; then
+        echo "RESUME_CKPT set but not found: $RESUME_CKPT" >&2
+        exit 1
+    fi
+    echo "Resuming from $RESUME_CKPT"
+    RESUME_ARGS=(--resume-checkpoint "$RESUME_CKPT")
+fi
+
 torchrun --nproc_per_node="$SLURM_NTASKS_PER_NODE" --master_port=29500 pretrain.py \
     -c configs/ssl_bee.yaml \
     --dataset-dir "$DATA_DIR" \
     --init-checkpoint "$INIT_CKPT" \
-    --num-workers "$SLURM_CPUS_PER_TASK"
+    --num-workers "$SLURM_CPUS_PER_TASK" \
+    "${RESUME_ARGS[@]}"

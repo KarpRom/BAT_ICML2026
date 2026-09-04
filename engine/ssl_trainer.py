@@ -136,7 +136,25 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
                           decoder_depth=args.decoder_depth, decoder_heads=args.decoder_heads,
                           decoder_mlp_ratio=args.decoder_mlp_ratio, decoder_dim=args.decoder_dim).to(local_rank)
 
-    if args.init_checkpoint:
+    resume_ckpt = None
+    resume_step = 0
+    if args.resume_checkpoint:
+        # Continue a run that was cut off (e.g. by a SLURM time limit) from one of this
+        # script's own checkpoints -- a different, richer format than --init-checkpoint's
+        # (BAT_base.pt is a flat "student.encoder."-prefixed dict with no optimizer/
+        # scheduler/step state; ours below is {'encoder', 'decoder', 'ema_encoder',
+        # 'optimizer', 'scheduler', 'ema_scheduler_counter', 'optimized_steps', 'args'}).
+        # Takes priority over --init-checkpoint: warm-starting from BAT_base.pt again on
+        # top of an already-continued-pretrained encoder would throw away that progress.
+        if args.init_checkpoint and is_rank_zero:
+            print(f"--resume-checkpoint given; ignoring --init-checkpoint ({args.init_checkpoint}).")
+        resume_ckpt = torch.load(args.resume_checkpoint, map_location=f'cuda:{local_rank}')
+        student.encoder.load_state_dict(resume_ckpt['encoder'])
+        student.decoder.load_state_dict(resume_ckpt['decoder'])
+        resume_step = resume_ckpt['optimized_steps']
+        if is_rank_zero:
+            print(f"Resuming from {args.resume_checkpoint} at step {resume_step}")
+    elif args.init_checkpoint:
         # Warm-start continued pretraining from a released checkpoint (e.g. BAT_base.pt)
         # instead of the random init above. Released BAT checkpoints are a flat state
         # dict of the *whole* MLR_Student (encoder + decoder), with keys prefixed
@@ -163,7 +181,14 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
                           pos_trainable=False, layer_norm_first=False, pre_norm=True, use_gate=True,
                           instance_norm_target_layer=True, layer_norm_targets=True).to(local_rank)
 
-    teacher.encoder.load_state_dict(student.encoder.state_dict())
+    if resume_ckpt is not None:
+        # Unlike the from-scratch/warm-start paths, the teacher must NOT be copied from
+        # the student here -- after any amount of training the EMA teacher has diverged
+        # from the student (that divergence is the whole point), so it's restored from
+        # its own saved state instead.
+        teacher.encoder.load_state_dict(resume_ckpt['ema_encoder'])
+    else:
+        teacher.encoder.load_state_dict(student.encoder.state_dict())
     teacher.requires_grad_(False)
 
     print(f'Student params: {sum(p.numel() for p in student.parameters()):_}')
@@ -181,14 +206,28 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
     scheduler = RiseRunDecay(optimizer, warmup_steps=args.lr_warmup_steps, constant_steps=0,
                              total_steps=args.optimization_steps, min_lr=args.min_lr)
 
+    if resume_ckpt is not None:
+        if resume_ckpt['args'].get('grad_accumulation_steps') != args.grad_accumulation_steps:
+            print(
+                f"[Warning] grad_accumulation_steps changed since this checkpoint was saved "
+                f"({resume_ckpt['args'].get('grad_accumulation_steps')} -> {args.grad_accumulation_steps}); "
+                "the resumed step count may no longer land on a clean accumulation boundary."
+            )
+        optimizer.load_state_dict(resume_ckpt['optimizer'])
+        scheduler.load_state_dict(resume_ckpt['scheduler'])
+        ema_scheduler.counter = resume_ckpt['ema_scheduler_counter']
+        del resume_ckpt
+
     # Training Loop
     total_forward_passes = args.optimization_steps * args.grad_accumulation_steps
+    start_forward_pass = resume_step * args.grad_accumulation_steps
     history = {'global_loss': [], 'local_loss': []}
     save_freq = args.save_interval if args.save_interval else args.optimization_steps
-    pbar = tqdm(total=args.optimization_steps, desc="SSL Pretraining", colour='#87ceeb', disable=not is_rank_zero)
+    pbar = tqdm(total=args.optimization_steps, initial=resume_step, desc="SSL Pretraining", colour='#87ceeb',
+                disable=not is_rank_zero)
     temp_g_loss, temp_l_loss = 0.0, 0.0
 
-    for step in range(total_forward_passes):
+    for step in range(start_forward_pass, total_forward_passes):
         x = next(infinite_loader)
         x = x.to(local_rank, non_blocking=True)
         is_accumulating = (step + 1) % args.grad_accumulation_steps != 0
@@ -224,6 +263,9 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
                         'encoder': student.module.encoder.state_dict(),
                         'decoder': student.module.decoder.state_dict(),
                         'ema_encoder': teacher.encoder.state_dict(),
+                        'optimizer': optimizer.state_dict(),
+                        'scheduler': scheduler.state_dict(),
+                        'ema_scheduler_counter': ema_scheduler.counter,
                         'optimized_steps': pbar.n,
                         'args': vars(args)
                     }, current_save_path)
