@@ -23,6 +23,11 @@
 #   this restores optimizer/scheduler/step state too, not just model weights:
 #     sbatch --export=DATA_DIR=/path/to/500k_corpus,RESUME_CKPT=/path/to/logs/SSL/step(50000)_BAT_state_....pt \
 #         --gres=gpu:4 --ntasks-per-node=4 --cpus-per-task=<N> slurm/pretrain_bat.slurm
+#   Using your own environment setup instead of the bare module load below (e.g. a venv
+#   with extra pip packages layered on top of the module) -- pass ENV_SCRIPT, a path to
+#   a script that gets sourced (not executed) in place of the default module load:
+#     sbatch --export=DATA_DIR=/path/to/500k_corpus,ENV_SCRIPT=/path/to/your/env.sh \
+#         --gres=gpu:4 --ntasks-per-node=4 --cpus-per-task=<N> slurm/pretrain_bat.slurm
 
 #SBATCH --job-name=bat_ssl_pretrain
 #SBATCH --account=soz@h100
@@ -36,8 +41,19 @@
 
 set -euo pipefail
 
-module purge
-module load pytorch-gpu/py3/2.8.0          # match whatever module the front-node download used
+if [ -n "${ENV_SCRIPT:-}" ]; then
+    # User-supplied env setup (module loads, venv activation, whatever their own
+    # environment needs) -- sourced, not executed, so it can export/activate into
+    # this shell. Path can be anything on a shared filesystem; not fixed to this repo.
+    if [ ! -f "$ENV_SCRIPT" ]; then
+        echo "ENV_SCRIPT set but not found: $ENV_SCRIPT" >&2
+        exit 1
+    fi
+    source "$ENV_SCRIPT"
+else
+    module purge
+    module load pytorch-gpu/py3/2.8.0
+fi
 
 : "${DATA_DIR:?Set DATA_DIR, e.g. sbatch --export=DATA_DIR=/path/to/wavs pretrain_bat.slurm}"
 INIT_CKPT="$HOME/.cache/bat_ssl/BAT_base.pt"
