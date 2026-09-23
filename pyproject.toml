@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bat-icml2026"
+version = "1.0.0"
+description = "Better Audio Transformer (ICML 2026) -- SSL audio pretraining + downstream eval"
+requires-python = ">=3.9"
+dependencies = [
+    "librosa",
+    "soxr",           # librosa's res_type="soxr_hq"/"soxr_vhq" resampling backend
+    "datasets",
+    "huggingface_hub",
+    "scikit-learn",
+    "soundfile",
+    "pandas",
+    "scipy",
+    "gdown",
+    "jiwer",
+    "sed_eval",
+    "pyyaml",
+    "tqdm",
+    "requests",
+    "matplotlib",
+]
+
+[tool.setuptools]
+packages = ["models", "data", "engine"]

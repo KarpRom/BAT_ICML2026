@@ -19,10 +19,16 @@ conda activate bat
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 ```
 
-3. Install any other missing packages using pip, but these are necessary:
+3. Install this repo (and its other dependencies) as an editable package:
 ```bash
-pip install librosa datasets==3.6.0 sed_eval jiwer scikit-learn pandas tqdm scipy
+pip install -e .
 ```
+This installs everything `pyproject.toml` declares (`librosa`, `datasets`, `sed_eval`,
+`jiwer`, `scikit-learn`, `pandas`, `scipy`, `soundfile`, `huggingface_hub`, `gdown`,
+`pyyaml`, `tqdm`, `requests`, `matplotlib`) without touching `torch`/`torchaudio`
+(installed in step 2). It also makes `models`/`data`/`engine` importable from outside
+this directory (e.g. `from models.vit import ViT`) -- used by other projects (such as
+bbeedeep) that depend on this repo as a library rather than running its scripts directly.
 
 ---
 
