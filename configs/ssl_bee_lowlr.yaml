@@ -1,0 +1,70 @@
+# Lower-LR variant of ssl_bee.yaml. The 5e-4 run's checkpoints probed worse than
+# BAT_base on buzz/cast F1 (seed-paired, n=8), already by step 10k, so this run lowers
+# the peak LR 10x and shortens the run. EMA schedule is kept per-step identical to
+# ssl_bee.yaml (ema_warmup_steps 25000), so the EMA teacher mixes the same way at any
+# given step and only the LR schedule differs between the two runs.
+#
+# dataset_dir and init_checkpoint are passed on the CLI by slurm/pretrain_bat.slurm.
+#
+# ==========================================
+# System & Environment
+# ==========================================
+device: cuda
+# Overridden by the SLURM script (--num-workers "$SLURM_CPUS_PER_TASK") to match
+# whatever --cpus-per-task was actually requested at submission time -- this default
+# only matters if you run pretrain.py directly, outside the SLURM script.
+num_workers: 16
+compile: true
+state_save_path: null  # unused by ssl_trainer.py (it builds its own timestamped save path); kept null to match upstream
+save_interval: 2500
+log_dir: logs/SSL_lowlr  # separate from logs/SSL so step(N) checkpoint names don't collide
+
+# ==========================================
+# Data & Features
+# ==========================================
+sr: 16000
+n_fft: 1024
+hop_length: 160
+n_mels: 128
+time_frame_size: 1024  # number of time frames after transforming the waveform into a spectrogram; our 5s bee clips (~498 frames @ 10ms hop) get padded to this ~10.24s window, no cropping needed
+
+# ==========================================
+# Model Architecture
+# ==========================================
+patch_size: 16
+dim: 768
+depth: 12
+num_heads: 12
+mlp_ratio: 4
+decoder_depth: 6
+decoder_heads: 12
+decoder_mlp_ratio: 4
+decoder_dim: 768
+
+# ==========================================
+# Training & Optimization
+# ==========================================
+batch_size: 12  # per-GPU; effective batch = batch_size * nproc_per_node (GPUs in the job)
+optimization_steps: 25000
+lr: 5.0e-5
+min_lr: 1.0e-6
+lr_warmup_steps: 2500
+weight_decay: 0.05
+adam_beta1: 0.9
+adam_beta2: 0.95
+ema_warmup_steps: 25000
+ema_decay_start: 0.9998
+ema_decay_end: 0.99999
+# batch_size=12 * grad_accumulation_steps=2 = same 24-equivalent micro-batch (and same
+# 384 = batch_size*num_views views/optimizer-step) as the original 24/1 split -- halved
+# just to fit a single H100's 80GB: student forward+backward materializes a full
+# (batch_size*num_views, num_heads, N, N) attention matrix per layer (vit.py's Attention
+# doesn't use a fused/flash kernel), which OOM'd at 24/1 with ~78.3/79.2 GiB in use.
+grad_accumulation_steps: 2
+clip_norm: null  # gradient clip norm
+
+# ==========================================
+# Augmentation & Regularization
+# ==========================================
+mask_ratio: 0.8
+num_views: 16

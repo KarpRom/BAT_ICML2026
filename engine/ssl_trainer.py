@@ -98,7 +98,7 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
     is_rank_zero = (local_rank == 0)
 
     time_stamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    log_dir = Path('logs/SSL')
+    log_dir = Path(args.log_dir)
 
     if is_rank_zero:
         log_dir.mkdir(parents=True, exist_ok=True)

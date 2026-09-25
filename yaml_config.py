@@ -19,6 +19,7 @@ def get_ssl_config() -> argparse.Namespace:
     sys_group.add_argument('--device', default='cuda', type=str)
     sys_group.add_argument('--num-workers', default=32, type=int)
     sys_group.add_argument('--save-interval', type=int, help='frequency of steps to save a checkpoint.')
+    sys_group.add_argument('--log-dir', type=str, default='logs/SSL', help='where checkpoints and loss history go.')
 
     data_group = parser.add_argument_group('Data & Features')
     data_group.add_argument('--dataset-dir', type=str, default='as2m', help='path to AudioSet-2M.')

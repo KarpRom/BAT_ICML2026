@@ -23,6 +23,8 @@
 #   this restores optimizer/scheduler/step state too, not just model weights:
 #     sbatch --export=DATA_DIR=/path/to/500k_corpus,RESUME_CKPT=/path/to/logs/SSL/step(50000)_BAT_state_....pt \
 #         --gres=gpu:4 --ntasks-per-node=4 --cpus-per-task=<N> slurm/pretrain_bat.slurm
+#   Another config (default configs/ssl_bee.yaml) -- pass CONFIG:
+#     sbatch --export=ALL,DATA_DIR=...,CONFIG=configs/ssl_bee_lowlr.yaml ... slurm/pretrain_bat.slurm
 #   Using your own environment setup instead of the bare module load below (e.g. a venv
 #   with extra pip packages layered on top of the module) -- pass ENV_SCRIPT, a path to
 #   a script that gets sourced (not executed) in place of the default module load:
@@ -74,8 +76,11 @@ if [ -n "${RESUME_CKPT:-}" ]; then
     RESUME_ARGS=(--resume-checkpoint "$RESUME_CKPT")
 fi
 
+CONFIG="${CONFIG:-configs/ssl_bee.yaml}"
+echo "Config: $CONFIG"
+
 torchrun --nproc_per_node="$SLURM_NTASKS_PER_NODE" --master_port=29500 pretrain.py \
-    -c configs/ssl_bee.yaml \
+    -c "$CONFIG" \
     --dataset-dir "$DATA_DIR" \
     --init-checkpoint "$INIT_CKPT" \
     --num-workers "$SLURM_CPUS_PER_TASK" \
