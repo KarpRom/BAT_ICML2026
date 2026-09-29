@@ -114,6 +114,8 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
     ssl_data = np.array(
         [f.as_posix() for ext in ("*.wav", "*.flac") for f in dataset_dir.glob(f"**/{ext}")]
     ).astype(np.bytes_)
+    if is_rank_zero:
+        print(f"Found {len(ssl_data):,} audio files in {dataset_dir}")
 
     train_dataset = SSLAudioSet(ssl_data, sr=args.sr)
 

@@ -77,6 +77,10 @@ if [ -n "${RESUME_CKPT:-}" ]; then
 fi
 
 CONFIG="${CONFIG:-configs/ssl_bee.yaml}"
+if [ ! -f "$CONFIG" ]; then
+    echo "CONFIG not found: $CONFIG" >&2
+    exit 1
+fi
 echo "Config: $CONFIG"
 
 torchrun --nproc_per_node="$SLURM_NTASKS_PER_NODE" --master_port=29500 pretrain.py \
