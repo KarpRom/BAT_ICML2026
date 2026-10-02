@@ -23,6 +23,8 @@
 #   this restores optimizer/scheduler/step state too, not just model weights:
 #     sbatch --export=DATA_DIR=/path/to/500k_corpus,RESUME_CKPT=/path/to/logs/SSL/step(50000)_BAT_state_....pt \
 #         --gres=gpu:4 --ntasks-per-node=4 --cpus-per-task=<N> slurm/pretrain_bat.slurm
+#   In 2 h chunks on the dev QOS (chained jobs, each resuming from the latest checkpoint):
+#     slurm/pretrain_chain.sh 6 DATA_DIR=...,CONFIG=configs/ssl_bee_lowlr.yaml
 #   Another config (default configs/ssl_bee.yaml) -- pass CONFIG:
 #     sbatch --export=ALL,DATA_DIR=...,CONFIG=configs/ssl_bee_lowlr.yaml ... slurm/pretrain_bat.slurm
 #   Using your own environment setup instead of the bare module load below (e.g. a venv
@@ -66,6 +68,34 @@ fi
 
 cd "$SLURM_SUBMIT_DIR"  # repo root -- see the IMPORTANT note above; must submit from there
 
+CONFIG="${CONFIG:-configs/ssl_bee.yaml}"
+if [ ! -f "$CONFIG" ]; then
+    echo "CONFIG not found: $CONFIG" >&2
+    exit 1
+fi
+echo "Config: $CONFIG"
+
+# AUTO_RESUME=1 (set by slurm/pretrain_chain.sh): resume from the latest checkpoint in the
+# config's log_dir, or start from BAT_base if there is none; exit if the run is already done.
+if [ "${AUTO_RESUME:-0}" = 1 ] && [ -z "${RESUME_CKPT:-}" ]; then
+    LOG_DIR=$(sed -n 's/^log_dir: *\([^ #]*\).*/\1/p' "$CONFIG")
+    TOTAL=$(sed -n 's/^optimization_steps: *\([0-9]*\).*/\1/p' "$CONFIG")
+    LATEST=$(ls "${LOG_DIR:-logs/SSL}"/step\(*\)_BAT_state_*.pt 2>/dev/null \
+        | sed 's/.*step(\([0-9]*\)).*/\1 &/' | sort -n | tail -1 || true)
+    if [ -n "$LATEST" ]; then
+        if [ "${LATEST%% *}" -ge "${TOTAL:-0}" ]; then
+            echo "Already at step ${LATEST%% *} / $TOTAL: nothing to do."
+            exit 0
+        fi
+        RESUME_CKPT="${LATEST#* }"
+    fi
+fi
+
+SAVE_ARGS=()
+if [ -n "${SAVE_INTERVAL:-}" ]; then
+    SAVE_ARGS=(--save-interval "$SAVE_INTERVAL")
+fi
+
 RESUME_ARGS=()
 if [ -n "${RESUME_CKPT:-}" ]; then
     if [ ! -f "$RESUME_CKPT" ]; then
@@ -76,16 +106,10 @@ if [ -n "${RESUME_CKPT:-}" ]; then
     RESUME_ARGS=(--resume-checkpoint "$RESUME_CKPT")
 fi
 
-CONFIG="${CONFIG:-configs/ssl_bee.yaml}"
-if [ ! -f "$CONFIG" ]; then
-    echo "CONFIG not found: $CONFIG" >&2
-    exit 1
-fi
-echo "Config: $CONFIG"
-
 torchrun --nproc_per_node="$SLURM_NTASKS_PER_NODE" --master_port=29500 pretrain.py \
     -c "$CONFIG" \
     --dataset-dir "$DATA_DIR" \
     --init-checkpoint "$INIT_CKPT" \
     --num-workers "$SLURM_CPUS_PER_TASK" \
+    "${SAVE_ARGS[@]}" \
     "${RESUME_ARGS[@]}"
