@@ -170,6 +170,13 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
         state = torch.load(args.init_checkpoint, map_location=f'cuda:{local_rank}')
         prefix = 'student.encoder.'
         encoder_state = {k[len(prefix):]: v for k, v in state.items() if k.startswith(prefix)}
+        # A shorter window (e.g. time_frame_size 512 for 5 s clips) has fewer tokens: keep the
+        # first ones. Tokens are time-major, so these are the positions of the first time
+        # patches, exactly what they had at the released window. (Not a regenerated grid:
+        # the sin-cos layout of a smaller grid differs from the released one's first rows.)
+        n_tokens = student.encoder.pos_embed.shape[1]
+        if encoder_state['pos_embed'].shape[1] > n_tokens:
+            encoder_state['pos_embed'] = encoder_state['pos_embed'][:, :n_tokens]
         missing, unexpected = student.encoder.load_state_dict(encoder_state, strict=False)
         assert not missing and not unexpected, (
             f"init_checkpoint mismatch: missing={missing} unexpected={unexpected}"

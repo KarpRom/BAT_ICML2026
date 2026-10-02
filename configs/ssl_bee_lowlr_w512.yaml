@@ -1,0 +1,65 @@
+# ssl_bee_lowlr.yaml with a 512-frame window (5.12 s) instead of 1024 (~10 s): our clips are
+# 5 s (501 frames), so at 1024 half of every input was zero padding. On the downstream frozen
+# BAT_base + CGP probe, 512 frames gave buzz +0.006 (same species/cast) and 3.8x faster epochs.
+# Only the window, log_dir and the batch split differ from ssl_bee_lowlr.yaml.
+#
+# dataset_dir and init_checkpoint are passed on the CLI by slurm/pretrain_bat.slurm;
+# --init-checkpoint BAT_base.pt keeps the first 256 tokens of its pos_embed (ssl_trainer.py).
+#
+# ==========================================
+# System & Environment
+# ==========================================
+device: cuda
+num_workers: 16
+compile: true
+state_save_path: null  # unused by ssl_trainer.py (it builds its own timestamped save path); kept null to match upstream
+save_interval: 2500
+log_dir: logs/SSL_lowlr_w512
+
+# ==========================================
+# Data & Features
+# ==========================================
+sr: 16000
+n_fft: 1024
+hop_length: 160
+n_mels: 128
+time_frame_size: 512  # 32 time patches x 8 freq patches = 256 tokens; a 5 s clip (501 frames) fills it
+
+# ==========================================
+# Model Architecture
+# ==========================================
+patch_size: 16
+dim: 768
+depth: 12
+num_heads: 12
+mlp_ratio: 4
+decoder_depth: 6
+decoder_heads: 12
+decoder_mlp_ratio: 4
+decoder_dim: 768
+
+# ==========================================
+# Training & Optimization
+# ==========================================
+# Same 24 clips per optimizer step and GPU as ssl_bee_lowlr.yaml (12 x 2 accumulation there),
+# in one pass: the attention matrices that OOM'd at 1024 frames are 4x smaller at 512.
+# If it still OOMs, go back to batch_size 12 + grad_accumulation_steps 2 (same optimization).
+batch_size: 24
+grad_accumulation_steps: 1
+optimization_steps: 25000
+lr: 5.0e-5
+min_lr: 1.0e-6
+lr_warmup_steps: 2500
+weight_decay: 0.05
+adam_beta1: 0.9
+adam_beta2: 0.95
+ema_warmup_steps: 25000
+ema_decay_start: 0.9998
+ema_decay_end: 0.99999
+clip_norm: null  # gradient clip norm
+
+# ==========================================
+# Augmentation & Regularization
+# ==========================================
+mask_ratio: 0.8
+num_views: 16
