@@ -46,6 +46,8 @@ def get_ssl_config() -> argparse.Namespace:
     model_group.add_argument('--init-checkpoint', type=str, default=None,
                              help='Warm-start the student encoder from this checkpoint '
                                   '(e.g. BAT_base.pt) instead of random init.')
+    model_group.add_argument('--init-decoder', action='store_true',
+                             help='with --init-checkpoint: also load its decoder (default: random decoder)')
 
     train_group = parser.add_argument_group('Training & Optimization')
     train_group.add_argument('--resume-checkpoint', type=str, default=None,

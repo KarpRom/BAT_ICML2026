@@ -238,6 +238,20 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
         )
         if is_rank_zero:
             print(f"Warm-started student encoder from {args.init_checkpoint}")
+        if args.init_decoder:
+            # Also the released decoder (87 "student.decoder.*" keys in BAT_base.pt): a random
+            # decoder sends meaningless gradients into the warm-started encoder at first.
+            prefix = 'student.decoder.'
+            decoder_state = {k[len(prefix):]: v for k, v in state.items() if k.startswith(prefix)}
+            n_tokens = student.decoder.pos_embed.shape[1]
+            if decoder_state['pos_embed'].shape[1] > n_tokens:
+                decoder_state['pos_embed'] = decoder_state['pos_embed'][:, :n_tokens]
+            missing, unexpected = student.decoder.load_state_dict(decoder_state, strict=False)
+            assert not missing and not unexpected, (
+                f"init_checkpoint decoder mismatch: missing={missing} unexpected={unexpected}"
+            )
+            if is_rank_zero:
+                print(f"Warm-started student decoder from {args.init_checkpoint}")
 
     teacher = MLR_Teacher(input_shape=(args.time_frame_size, args.n_mels),
                           patch_size=(args.patch_size, args.patch_size),
