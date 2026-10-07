@@ -23,6 +23,10 @@ def get_ssl_config() -> argparse.Namespace:
 
     data_group = parser.add_argument_group('Data & Features')
     data_group.add_argument('--dataset-dir', type=str, default='as2m', help='path to AudioSet-2M.')
+    data_group.add_argument('--replay-dir', type=str, default=None,
+                            help='second corpus mixed into every epoch (e.g. AudioSet during continued pretraining)')
+    data_group.add_argument('--replay-ratio', type=float, default=0.5,
+                            help='share of each epoch drawn from --replay-dir (fresh random draw per epoch)')
     data_group.add_argument('--sr', default=16000, type=int)
     data_group.add_argument('--n-fft', default=1024, type=int)
     data_group.add_argument('--hop-length', default=160, type=int)

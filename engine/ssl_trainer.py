@@ -4,6 +4,7 @@ __version__ = "1.0.0"
 
 import os
 import gc
+import time
 from datetime import datetime
 from pathlib import Path
 import numpy as np
@@ -32,6 +33,54 @@ def setup_ddp():
 
 def cleanup_ddp():
     dist.destroy_process_group()
+
+
+def list_audio(folder: str, log_dir: Path) -> list:
+    """Sorted .wav (Cuts_Database smoke test, AudioSet) and .flac (bee corpus from
+    build_ssl_dataset.py) files under `folder`. Rank 0 lists once and caches the list in
+    log_dir (a recursive glob of millions of files on Lustre takes minutes); the other ranks
+    and later resumed jobs read the cache, so every rank also gets the same order."""
+    cache = log_dir / f"files_{Path(folder).resolve().as_posix().strip('/').replace('/', '_')}.txt"
+    if dist.get_rank() == 0 and not cache.exists():
+        files = sorted(f.as_posix() for ext in ("*.wav", "*.flac") for f in Path(folder).glob(f"**/{ext}"))
+        tmp = cache.with_suffix(".tmp")
+        tmp.write_text("\n".join(files))
+        tmp.replace(cache)
+    while not cache.exists():  # polling, not a barrier: a long listing would hit the NCCL timeout
+        time.sleep(5)
+    return [line for line in cache.read_text().splitlines() if line]
+
+
+class ReplaySampler(torch.utils.data.Sampler):
+    """Distributed sampler over [main files | replay files] (one SSLAudioSet, replay files
+    appended): every epoch has all main files plus a fresh random draw of replay files sized so
+    they are `replay_ratio` of the epoch, shuffled together, then split across ranks like
+    DistributedSampler (same length on every rank). set_epoch() changes the draw."""
+
+    def __init__(self, n_main: int, n_replay: int, replay_ratio: float, seed: int = 0):
+        assert 0 < replay_ratio < 1, f"replay_ratio must be in (0, 1), got {replay_ratio}"
+        self.n_main, self.n_replay, self.seed, self.epoch = n_main, n_replay, seed, 0
+        # A small replay corpus (e.g. AudioSet balanced, ~20k clips vs 650k bee clips) is drawn
+        # with replacement, so the ratio holds whatever its size.
+        self.n_draw = round(n_main * replay_ratio / (1 - replay_ratio))
+        self.rank, self.world = dist.get_rank(), dist.get_world_size()
+        self.per_rank = (n_main + self.n_draw) // self.world
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = epoch
+
+    def __iter__(self):
+        g = torch.Generator().manual_seed(self.seed + self.epoch)  # same permutation on every rank
+        if self.n_draw <= self.n_replay:
+            replay = self.n_main + torch.randperm(self.n_replay, generator=g)[:self.n_draw]
+        else:
+            replay = self.n_main + torch.randint(self.n_replay, (self.n_draw,), generator=g)
+        idx = torch.cat([torch.arange(self.n_main), replay])
+        idx = idx[torch.randperm(len(idx), generator=g)][:self.per_rank * self.world]
+        return iter(idx[self.rank::self.world].tolist())
+
+    def __len__(self) -> int:
+        return self.per_rank
 
 
 def ssl_train_step(student: torch.nn.Module,
@@ -107,19 +156,25 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
         state_save_path = f'BAT_state_{time_stamp}.pt'
 
     # Data
-    # Matches both extensions: the Cuts_Database smoke-test corpus is .wav, the real
-    # bee corpus built by detection/build_ssl_dataset.py is .flac. librosa.load()
-    # (used in SSLAudioSet, via its soundfile backend) is format-agnostic either way.
-    dataset_dir = Path(args.dataset_dir)
-    ssl_data = np.array(
-        [f.as_posix() for ext in ("*.wav", "*.flac") for f in dataset_dir.glob(f"**/{ext}")]
-    ).astype(np.bytes_)
+    dist.barrier()  # log_dir created by rank 0
+    main_files = list_audio(args.dataset_dir, log_dir)
     if is_rank_zero:
-        print(f"Found {len(ssl_data):,} audio files in {dataset_dir}")
+        print(f"Found {len(main_files):,} audio files in {args.dataset_dir}")
+    # Replay (e.g. AudioSet, BAT's original data) mixed into every epoch at --replay-ratio, to
+    # limit forgetting during continued pretraining on the main (bee) corpus.
+    replay_files = list_audio(args.replay_dir, log_dir) if args.replay_dir else []
+    if args.replay_dir and is_rank_zero:
+        print(f"Found {len(replay_files):,} replay files in {args.replay_dir} (ratio {args.replay_ratio})")
+    ssl_data = np.array(main_files + replay_files).astype(np.bytes_)
 
     train_dataset = SSLAudioSet(ssl_data, sr=args.sr)
 
-    sampler = DistributedSampler(train_dataset, shuffle=True)
+    if replay_files:
+        sampler = ReplaySampler(len(main_files), len(replay_files), args.replay_ratio)
+        if is_rank_zero:
+            print(f"Each epoch: {len(main_files):,} main + {sampler.n_draw:,} replay files")
+    else:
+        sampler = DistributedSampler(train_dataset, shuffle=True)
     train_loader = DataLoader(train_dataset, sampler=sampler, batch_size=args.batch_size, num_workers=args.num_workers,
                               pin_memory=False, collate_fn=train_dataset.collate_fn, persistent_workers=True,
                               drop_last=True)

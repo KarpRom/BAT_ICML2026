@@ -25,6 +25,8 @@
 #         --gres=gpu:4 --ntasks-per-node=4 --cpus-per-task=<N> slurm/pretrain_bat.slurm
 #   In 2 h chunks on the dev QOS (chained jobs, each resuming from the latest checkpoint):
 #     slurm/pretrain_chain.sh 6 DATA_DIR=...,CONFIG=configs/ssl_bee_lowlr.yaml
+#   Mixing in a second corpus (e.g. AudioSet) to limit forgetting -- pass REPLAY_DIR:
+#     slurm/pretrain_chain.sh 2 DATA_DIR=...,REPLAY_DIR=/path/to/audioset,CONFIG=configs/ssl_bee_lowlr_w512_replay.yaml
 #   Another config (default configs/ssl_bee.yaml) -- pass CONFIG:
 #     sbatch --export=ALL,DATA_DIR=...,CONFIG=configs/ssl_bee_lowlr.yaml ... slurm/pretrain_bat.slurm
 #   Using your own environment setup instead of the bare module load below (e.g. a venv
@@ -94,6 +96,14 @@ fi
 SAVE_ARGS=()
 if [ -n "${SAVE_INTERVAL:-}" ]; then
     SAVE_ARGS=(--save-interval "$SAVE_INTERVAL")
+fi
+# REPLAY_DIR (e.g. AudioSet): mixed into every epoch at the config's replay_ratio (default 0.5).
+if [ -n "${REPLAY_DIR:-}" ]; then
+    if [ ! -d "$REPLAY_DIR" ]; then
+        echo "REPLAY_DIR set but not found: $REPLAY_DIR" >&2
+        exit 1
+    fi
+    SAVE_ARGS+=(--replay-dir "$REPLAY_DIR")
 fi
 
 RESUME_ARGS=()
