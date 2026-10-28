@@ -26,6 +26,7 @@ for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMBA
 
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 SPLITS = {"eval": "eval_segments", "balanced": "balanced_train_segments", "unbalanced": "unbalanced_train_segments"}
 
@@ -220,7 +221,10 @@ def run_shard(out_dir: Path, shard: int, num_shards: int, workers: int) -> None:
     print(f"shard {shard}/{num_shards}: {len(part):,} files, {workers} workers")
     t0 = time.time()
     with Pool(workers) as pool:
-        rows = pool.map(analyze_file, part["path"].tolist(), chunksize=16)
+        # imap keeps the input order (rows line up with `part`); slow refresh in SLURM logs
+        it = pool.imap(analyze_file, part["path"].tolist(), chunksize=16)
+        rows = list(tqdm(it, total=len(part), desc=f"shard {shard}", unit="clip",
+                         mininterval=0.5 if sys.stderr.isatty() else 30))
     df = pd.DataFrame(rows)
     df.insert(0, "split", part["split"].values)
     final = write_table(df, stem)

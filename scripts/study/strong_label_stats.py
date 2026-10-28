@@ -25,6 +25,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 BASE_URL = "http://storage.googleapis.com/us_audioset/youtube_corpus/strong/"
 FILES = ["audioset_train_strong.tsv", "audioset_eval_strong.tsv", "mid_to_display_name.tsv"]
@@ -117,7 +118,9 @@ def stats(strong_dir: Path, ontology: Path, out_dir: Path) -> None:
         per_class[w] = {}
     gaps = []  # same-class gaps: two events of one class closer than a token merge into it
     glob = {w: np.zeros(3, dtype=np.int64) for w in WIDTHS_MS}
-    for seg, events in ev.groupby("segment_id", sort=False):
+    clips = ev.groupby("segment_id", sort=False)
+    for seg, events in tqdm(clips, total=clips.ngroups, desc="clips", unit="clip",
+                            mininterval=0.5 if sys.stderr.isatty() else 30):
         mids, act = clip_activity(events)
         for w in WIDTHS_MS:
             pres, multi, seq = patch_counts(act, int(round(w / 1000 / FRAME_S)))
