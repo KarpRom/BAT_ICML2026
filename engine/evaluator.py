@@ -25,8 +25,11 @@ def evaluate_multilabel(model: torch.nn.Module,
                         data_loader: DataLoader,
                         data_transforms: torch.nn.Module,
                         device: str,
-                        amp_dtype: Optional[torch.dtype] = None) -> Dict[str, float]:
-    """Evaluates the model on a multi-label classification dataset."""
+                        amp_dtype: Optional[torch.dtype] = None,
+                        per_class_path: Optional[Union[str, Path]] = None) -> Dict[str, float]:
+    """Evaluates the model on a multi-label classification dataset. With per_class_path, also
+    writes each class's AP (and positives count) there as CSV, plus the clip-level scores next
+    to it (.npz), for per-class / per-clip analysis (scripts/study/analyze.py)."""
     targets, predicts = [], []
     for x, y in data_loader:
         x, *_ = data_transforms(x.to(device), None, mask_ratio=0, augment=False)
@@ -36,6 +39,19 @@ def evaluate_multilabel(model: torch.nn.Module,
         predicts.append(logits.float().sigmoid().cpu())
     targets = torch.cat(targets, dim=0).numpy()
     predicts = torch.cat(predicts, dim=0)
+    if per_class_path is not None:
+        per_class_path = Path(per_class_path)
+        names = list(getattr(data_loader.dataset, 'class_names', None) or [])
+        names += [str(i) for i in range(len(names), targets.shape[1])]  # classes absent from the eval set
+        has_pos = targets.sum(axis=0) > 0
+        ap = np.full(targets.shape[1], np.nan)
+        ap[has_pos] = average_precision_score(targets[:, has_pos], predicts.numpy()[:, has_pos], average=None)
+        pd.DataFrame({'class_index': np.arange(targets.shape[1]), 'name': names, 'ap': ap * 100,
+                      'n_positives': targets.sum(axis=0).astype(int)}).to_csv(per_class_path, index=False)
+        files = getattr(data_loader.dataset, 'df', None)
+        files = files.file_path.str.decode('utf-8').values if files is not None and 'file_path' in files else []
+        np.savez_compressed(per_class_path.with_suffix('.npz'), scores=predicts.numpy().astype(np.float16),
+                            targets=targets.astype(np.uint8), files=np.asarray(files))
     return {'f1_macro': f1_score(targets, predicts.round().numpy(), average='macro', zero_division=0) * 100,
             'mAP_macro': average_precision_score(targets, predicts.numpy(), average='macro') * 100}
 

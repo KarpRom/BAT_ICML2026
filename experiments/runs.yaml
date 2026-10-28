@@ -1,0 +1,52 @@
+# Every run of the project, for scripts/xp.py. Add runs here, then `python scripts/xp.py submit`.
+# Rerunning `submit` is always safe: done and queued runs are skipped, stopped ones resume.
+#
+# Run fields:
+#   name        unique; also the run directory (<root>/<name>) and the SLURM job name (xp_<name>)
+#   kind        study | strong | report | pretrain | finetune
+#   config      YAML config (pretrain / finetune)
+#   init        bat_base (default) | run:<pretrain run> (its final_BAT_format.pt) | a checkpoint path | none
+#   init_ema    true: with init run:..., use the EMA teacher weights instead of the student's
+#   overrides   {cli_option: value} passed to pretrain.py / main.py (true -> bare flag)
+#   depends_on  [runs] that must finish first (init/per_class_ap/study: run:... are added automatically)
+#   gpus, cpus_per_task, time, qos, account   SLURM resources (defaults per kind in scripts/xp.py)
+#   chain       N: run as N chained 2 h jobs on the dev QOS instead of one `time` job
+#   data_dir    dataset path if not the AudioSet default
+#
+# Paths may use environment variables ($WORK, $SCRATCH, $AUDIOSET...).
+
+settings:
+  root: $SCRATCH/bat_runs                   # run directories (checkpoints are big: $SCRATCH)
+  audioset: $AUDIOSET                       # AudioSet root: eval_segments/, *_segments.csv, ontology.json
+  bat_base: $HOME/.cache/bat_ssl/BAT_base.pt
+  account: soz@h100
+  cpu_account: soz@cpu
+  env_script: null                          # sourced instead of `module load pytorch-gpu/py3/2.8.0`
+
+runs:
+  # ---------------- Step 0: what is worth changing (CPU only)
+  - name: study_audio                       # per-clip sample rate / bandwidth / time scales, full AudioSet
+    kind: study
+    num_shards: 50
+
+  - name: study_strong                      # event durations + token merging from the strong labels
+    kind: strong                            # needs: strong_label_stats.py download --dir $AUDIOSET/strong
+
+  - name: study_report                      # report.md; delete it to regenerate (e.g. with per-class AP)
+    kind: report
+    study: run:study_audio
+    strong_run: run:study_strong
+    # per_class_ap: run:bat_as2m_ft         # once Step 1 is done: links properties to BAT's per-class AP
+
+  # ---------------- Step 1: reproduce BAT (target: 48.85 mAP on AS-2M)
+  - name: bat_as20k_ft                      # cheap reference, also the evaluation of every later variant
+    kind: finetune
+    config: configs/as20k/as20k_finetune_config.yaml
+
+  - name: bat_as20k_cgp
+    kind: finetune
+    config: configs/as20k/as20k_cgp_config.yaml
+
+  - name: bat_as2m_ft                       # saves the finetuned weights (save_model: true in the config)
+    kind: finetune
+    config: configs/as2m/as2m_finetune_config.yaml

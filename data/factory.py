@@ -47,6 +47,8 @@ def get_dataloaders(args: argparse.Namespace,
         else:
             train_dataset = AudioSet(train_df, sr=args.sr, train=True)
             test_dataset = AudioSet(eval_df, sr=args.sr)
+        test_dataset.class_names = eval_df.attrs.get('class_names')  # for the per-class AP dump
+        print(f"AudioSet {args.task}: {len(train_df):,} train clips, {len(eval_df):,} eval clips found")
 
         if args.task == 'as2m':
             parsed_codes = train_df['codes'].apply(lambda x: [int(c) for c in x.decode('UTF-8').split(',') if c])

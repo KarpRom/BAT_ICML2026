@@ -156,13 +156,16 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
         state_save_path = f'BAT_state_{time_stamp}.pt'
 
     # Data
+    cache_dir = Path(args.cache_dir) if args.cache_dir else log_dir
+    if is_rank_zero:
+        cache_dir.mkdir(parents=True, exist_ok=True)
     dist.barrier()  # log_dir created by rank 0
-    main_files = list_audio(args.dataset_dir, log_dir)
+    main_files = list_audio(args.dataset_dir, cache_dir)
     if is_rank_zero:
         print(f"Found {len(main_files):,} audio files in {args.dataset_dir}")
     # Replay (e.g. AudioSet, BAT's original data) mixed into every epoch at --replay-ratio, to
     # limit forgetting during continued pretraining on the main (bee) corpus.
-    replay_files = list_audio(args.replay_dir, log_dir) if args.replay_dir else []
+    replay_files = list_audio(args.replay_dir, cache_dir) if args.replay_dir else []
     if args.replay_dir and is_rank_zero:
         print(f"Found {len(replay_files):,} replay files in {args.replay_dir} (ratio {args.replay_ratio})")
     ssl_data = np.array(main_files + replay_files).astype(np.bytes_)
@@ -304,6 +307,7 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
     pbar = tqdm(total=args.optimization_steps, initial=resume_step, desc="SSL Pretraining", colour='#87ceeb',
                 disable=not is_rank_zero)
     temp_g_loss, temp_l_loss = 0.0, 0.0
+    x = None  # resuming at the last step runs no iteration
 
     for step in range(start_forward_pass, total_forward_passes):
         x = next(infinite_loader)
@@ -352,6 +356,15 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
 
     if is_rank_zero:
         pbar.close()
+        if pbar.n == args.optimization_steps:
+            # The encoders in the released BAT_base.pt layout ("student.encoder.*" keys, what
+            # models/builder.py loads for downstream tasks), then DONE for scripts/xp.py.
+            student_state = {f'student.encoder.{k}': v for k, v in student.module.encoder.state_dict().items()}
+            student_state.update({f'student.decoder.{k}': v for k, v in student.module.decoder.state_dict().items()})
+            torch.save(student_state, log_dir / 'final_BAT_format.pt')
+            torch.save({f'student.encoder.{k}': v for k, v in teacher.encoder.state_dict().items()},
+                       log_dir / 'final_ema_BAT_format.pt')  # same layout, EMA teacher weights
+            (log_dir / 'DONE').touch()
 
     # Cleanup
     torch._dynamo.reset()

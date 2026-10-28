@@ -20,6 +20,9 @@ def get_ssl_config() -> argparse.Namespace:
     sys_group.add_argument('--num-workers', default=32, type=int)
     sys_group.add_argument('--save-interval', type=int, help='frequency of steps to save a checkpoint.')
     sys_group.add_argument('--log-dir', type=str, default='logs/SSL', help='where checkpoints and loss history go.')
+    sys_group.add_argument('--cache-dir', type=str, default=None,
+                           help='where the audio file list is cached (default: --log-dir); share it between '
+                                'runs, listing AudioSet-2M on Lustre takes minutes')
 
     data_group = parser.add_argument_group('Data & Features')
     data_group.add_argument('--dataset-dir', type=str, default='as2m', help='path to AudioSet-2M.')
@@ -97,6 +100,11 @@ def get_task_config() -> argparse.Namespace:
     sys_group.add_argument('--device', default='cuda', type=str)
     sys_group.add_argument('--compile', action="store_true")
     sys_group.add_argument('--state-save-path', type=str)
+    sys_group.add_argument('--run-dir', type=str, default=None,
+                           help='one directory per run: periodic checkpoint (resumed automatically), '
+                                'results, per-class AP, metrics.json and a DONE marker (see scripts/xp.py)')
+    sys_group.add_argument('--save-interval', type=int, default=2000,
+                           help='with --run-dir: steps between resumable checkpoints')
     sys_group.add_argument('--train-num-workers', default=8, type=int)
     sys_group.add_argument('--val-num-workers', default=1, type=int)
     sys_group.add_argument('--test-num-workers', default=1, type=int)

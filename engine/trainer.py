@@ -91,9 +91,24 @@ def run_experiment(args: argparse.Namespace, fold_idx: Optional[int] = None) -> 
     if args.state_save_path is None:
         mode_suffix = "finetuned" if args.finetune else f"probe({args.head})"
         args.state_save_path = f"{save_prefix}_{args.task}_{mode_suffix}_{time_stamp}.pt"
+    temp_save_path = f"temp_state_{time_stamp}.pt"
+
+    # --run-dir: fixed file names inside one directory per run, so a job stopped by the time
+    # limit resumes from its last checkpoint and a finished run (or fold) is not redone
+    run_dir = Path(args.run_dir) if args.run_dir else None
+    ckpt_path = None
+    if run_dir:
+        tag = f"_fold{fold_idx}" if fold_idx else ""
+        run_dir.mkdir(parents=True, exist_ok=True)
+        args.state_save_path = (run_dir / f"results{tag}.pt").as_posix()
+        temp_save_path = (run_dir / f"best_state{tag}.pt").as_posix()
+        ckpt_path = run_dir / f"ckpt{tag}.pt"
+        if Path(args.state_save_path).exists():
+            print(f"\n[{args.task.upper()}] {args.state_save_path} exists: already done, skipping.")
+            results = torch.load(args.state_save_path, map_location='cpu', weights_only=False)
+            return results['test_metrics'], results['history']
 
     Path(args.state_save_path).parent.mkdir(parents=True, exist_ok=True)
-    temp_save_path = f"temp_state_{time_stamp}.pt"
 
     print(f"\n[{args.task.upper()}] Initializing {args.model_name}-{args.head} (Finetune: {args.finetune})")
 
@@ -113,6 +128,20 @@ def run_experiment(args: argparse.Namespace, fold_idx: Optional[int] = None) -> 
     total_forward_passes = args.optimization_steps * args.grad_accumulation_steps
     history = defaultdict(list)
     best_score = 100 if args.task == 'librispeech' else 0
+    start_step = 0
+
+    if ckpt_path is not None and ckpt_path.exists():
+        ckpt = torch.load(ckpt_path, map_location=args.device, weights_only=False)
+        model.load_state_dict(ckpt['model'])
+        optimizer.load_state_dict(ckpt['optimizer'])
+        scheduler.load_state_dict(ckpt['scheduler'])
+        if grad_scaler is not None and ckpt.get('grad_scaler'):
+            grad_scaler.load_state_dict(ckpt['grad_scaler'])
+        history = defaultdict(list, ckpt['history'])
+        best_score = ckpt['best_score']
+        start_step = ckpt['step']
+        print(f"Resumed from {ckpt_path} at step {start_step}")
+        del ckpt
 
     if args.use_asymmetric_loss:
         loss_fn = AsymmetricLossMultiLabel(gamma_neg=1, gamma_pos=0, clip=0.0)
@@ -142,8 +171,8 @@ def run_experiment(args: argparse.Namespace, fold_idx: Optional[int] = None) -> 
         eval_fn = partial(evaluate_dcase_val, device=args.device, amp_dtype=amp_dtype)
 
     val_msg, test_msg = "", ""
-    pbar = tqdm(total=args.optimization_steps, desc=f"Fold {fold_idx}" if fold_idx else "Training")
-    for step in range(total_forward_passes):
+    pbar = tqdm(total=args.optimization_steps, initial=start_step, desc=f"Fold {fold_idx}" if fold_idx else "Training")
+    for step in range(start_step * args.grad_accumulation_steps, total_forward_passes):
         batch = next(infinite_train_loader)
         x, y, in_len, tar_len, mask_info = (None,) * 5
         if args.task == 'librispeech':
@@ -190,6 +219,16 @@ def run_experiment(args: argparse.Namespace, fold_idx: Optional[int] = None) -> 
 
             pbar.set_description(f"Loss: {loss_val:.4f} | LR: {scheduler.get_last_lr()[0]:.2e}" + val_msg + test_msg)
 
+            if ckpt_path is not None and args.save_interval and pbar.n % args.save_interval == 0 \
+                    and pbar.n < args.optimization_steps:
+                tmp = ckpt_path.with_suffix('.tmp')  # write then rename: a kill mid-save keeps the old one
+                torch.save({'model': model.state_dict(), 'optimizer': optimizer.state_dict(),
+                            'scheduler': scheduler.state_dict(),
+                            'grad_scaler': grad_scaler.state_dict() if grad_scaler is not None else None,
+                            'history': dict(history), 'best_score': best_score, 'step': pbar.n}, tmp)
+                tmp.replace(ckpt_path)
+                (run_dir / 'progress.json').write_text(f'{{"step": {pbar.n}, "total": {args.optimization_steps}}}')
+
     pbar.close()
 
     if Path(temp_save_path).exists():
@@ -203,15 +242,20 @@ def run_experiment(args: argparse.Namespace, fold_idx: Optional[int] = None) -> 
                                            legacy=is_legacy, model_name=args.model_name, amp_dtype=amp_dtype,
                                            num_temporal_patches=args.num_temporal_patches, device=args.device,
                                            patch_stride_ms=args.patch_stride_ms, filter_size=3)
+    elif run_dir and args.task in ['as20k', 'as2m', 'hsn']:
+        tag = f"_fold{fold_idx}" if fold_idx else ""
+        test_metrics = eval_fn(model, test_loader, per_class_path=run_dir / f"per_class_ap{tag}.csv")
     else:
         test_metrics = eval_fn(model, test_loader)
 
     print(f"\n[{args.task.upper()}] Test Metrics:")
     for k, v in test_metrics.items(): print(f"  {k}: {v:.2f}")
 
-    results = {'history': history, 'test_metrics': test_metrics, 'args': vars(args)}
-    if args.save_model: results['state'] = model.state_dict(),
+    results = {'history': dict(history), 'test_metrics': test_metrics, 'args': vars(args)}
+    if args.save_model: results['state'] = model.state_dict()
     torch.save(results, args.state_save_path)
+    if ckpt_path is not None and ckpt_path.exists():
+        ckpt_path.unlink()  # the results file now marks this run (or fold) as finished
 
     # cleanup
     torch._dynamo.reset()

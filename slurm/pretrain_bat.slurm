@@ -62,7 +62,8 @@ else
 fi
 
 : "${DATA_DIR:?Set DATA_DIR, e.g. sbatch --export=DATA_DIR=/path/to/wavs pretrain_bat.slurm}"
-INIT_CKPT="$HOME/.cache/bat_ssl/BAT_base.pt"
+# INIT_CKPT: warm-start checkpoint (default: the released BAT_base.pt)
+INIT_CKPT="${INIT_CKPT:-$HOME/.cache/bat_ssl/BAT_base.pt}"
 if [ ! -f "$INIT_CKPT" ]; then
     echo "Checkpoint not found at $INIT_CKPT -- run 'python scripts/download_bat_checkpoint.py' on the front node first." >&2
     exit 1
@@ -77,18 +78,25 @@ if [ ! -f "$CONFIG" ]; then
 fi
 echo "Config: $CONFIG"
 
-# AUTO_RESUME=1 (set by slurm/pretrain_chain.sh): resume from the latest checkpoint in the
-# config's log_dir, or start from BAT_base if there is none; exit if the run is already done.
+# LOG_DIR (set by scripts/xp.py: one directory per run) overrides the config's log_dir.
+LOG_DIR="${LOG_DIR:-$(sed -n 's/^log_dir: *\([^ #]*\).*/\1/p' "$CONFIG")}"
+LOG_DIR="${LOG_DIR:-logs/SSL}"
+if [ -f "$LOG_DIR/DONE" ]; then
+    echo "$LOG_DIR/DONE exists: nothing to do."
+    exit 0
+fi
+
+# AUTO_RESUME=1 (set by slurm/pretrain_chain.sh and scripts/xp.py): resume from the latest
+# checkpoint in LOG_DIR, or start from INIT_CKPT if there is none; exit if the run is done.
 if [ "${AUTO_RESUME:-0}" = 1 ] && [ -z "${RESUME_CKPT:-}" ]; then
-    LOG_DIR=$(sed -n 's/^log_dir: *\([^ #]*\).*/\1/p' "$CONFIG")
     TOTAL=$(sed -n 's/^optimization_steps: *\([0-9]*\).*/\1/p' "$CONFIG")
-    LATEST=$(ls "${LOG_DIR:-logs/SSL}"/step\(*\)_BAT_state_*.pt 2>/dev/null \
+    TOTAL="${OPTIMIZATION_STEPS:-$TOTAL}"
+    LATEST=$(ls "$LOG_DIR"/step\(*\)_BAT_state_*.pt 2>/dev/null \
         | sed 's/.*step(\([0-9]*\)).*/\1 &/' | sort -n | tail -1 || true)
     if [ -n "$LATEST" ]; then
-        if [ "${LATEST%% *}" -ge "${TOTAL:-0}" ]; then
-            echo "Already at step ${LATEST%% *} / $TOTAL: nothing to do."
-            exit 0
-        fi
+        # At the last step already (but no DONE): resuming runs no step, only the final
+        # export + DONE, which a job killed right after its last checkpoint did not write.
+        echo "Latest checkpoint: step ${LATEST%% *} / ${TOTAL:-?}"
         RESUME_CKPT="${LATEST#* }"
     fi
 fi
@@ -116,10 +124,20 @@ if [ -n "${RESUME_CKPT:-}" ]; then
     RESUME_ARGS=(--resume-checkpoint "$RESUME_CKPT")
 fi
 
+EXTRA_ARGS=()
+if [ -n "${CACHE_DIR:-}" ]; then
+    EXTRA_ARGS+=(--cache-dir "$CACHE_DIR")
+fi
+# EXTRA: more pretrain.py arguments, space-separated (set by scripts/xp.py from a run's overrides)
+read -r -a EXTRA_SPLIT <<< "${EXTRA:-}"
+
 torchrun --nproc_per_node="$SLURM_NTASKS_PER_NODE" --master_port=29500 pretrain.py \
     -c "$CONFIG" \
     --dataset-dir "$DATA_DIR" \
     --init-checkpoint "$INIT_CKPT" \
+    --log-dir "$LOG_DIR" \
     --num-workers "$SLURM_CPUS_PER_TASK" \
     "${SAVE_ARGS[@]}" \
-    "${RESUME_ARGS[@]}"
+    "${RESUME_ARGS[@]}" \
+    "${EXTRA_ARGS[@]}" \
+    "${EXTRA_SPLIT[@]}"

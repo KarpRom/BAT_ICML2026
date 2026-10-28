@@ -97,17 +97,18 @@ class Attention(nn.Module):
         self.proj_drop = nn.Dropout(proj_drop)
         self.gate = nn.Linear(dim, dim) if use_gate else None
 
-    def forward(self, x: Tensor, num_vqt: int = 0) -> Tuple[Tensor, Tensor]:
+    def forward(self, x: Tensor, num_vqt: int = 0) -> Tuple[Tensor, Optional[Tensor]]:
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)  # 3, B, H, N, D
         q, k, v = qkv.unbind(0)  # B, H, N, D for each
         k = k[:, :, num_vqt:, :]
         v = v[:, :, num_vqt:, :]
 
-        attn = (q * self.scale) @ k.transpose(-2, -1)  # B, H, N, D @ B, H, D, N' -> B, H, N, N'
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-        attn_out = attn @ v  # B, H, N, N' @ B, H, N', D -> B, H, N, D
+        # fused attention (flash / memory-efficient kernels): the N x N' weights are never
+        # materialized, so they are not returned either (no caller uses them)
+        attn_out = F.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop.p if self.training else 0.,
+                                                  scale=self.scale)  # B, H, N, D
+        attn = None
         attn_out = attn_out.transpose(1, 2).reshape(B, N, C)
         if self.gate:
             g = self.gate(x).sigmoid()

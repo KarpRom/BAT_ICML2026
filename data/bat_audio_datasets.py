@@ -98,6 +98,7 @@ def curate_audioset_dfs(root_dir: Union[str, Path] = 'Datasets/AudioSet/',
     train_df['codes'] = np.array(train_df.codes).astype(np.bytes_)
     eval_df['file_path'] = np.array(eval_df.file_path).astype(np.bytes_)
     train_df['file_path'] = np.array(train_df.file_path).astype(np.bytes_)
+    eval_df.attrs['class_names'] = train_df.attrs['class_names'] = all_names  # name of label index i
 
     return train_df, eval_df
 
