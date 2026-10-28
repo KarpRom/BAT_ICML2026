@@ -6,6 +6,7 @@ aggregated per class by analyze.py. Two subcommands:
   list   one sorted file list for eval + balanced + unbalanced (run once, on a CPU node)
   run    one shard of that list -> <out_dir>/shards/<shard>.parquet; a shard whose output
          exists is skipped, so resubmitting the array job only redoes the missing ones
+  summary  headline numbers over the shards finished so far (per class: analyze.py)
 
   python scripts/study/audio_stats.py list --dataset-dir $AUDIOSET --out-dir study
   python scripts/study/audio_stats.py run --out-dir study --shard 0 --num-shards 100
@@ -204,6 +205,36 @@ def write_table(df: pd.DataFrame, path: Path) -> Path:
     return final
 
 
+def summarize(df: pd.DataFrame) -> str:
+    """The headline numbers of a set of clips: what analyze.py's report expands per class."""
+    ok = df[df["error"].fillna("") == ""]
+    q = lambda s, f=",.0f": " / ".join(f"{s.quantile(p):{f}}" for p in (0.1, 0.5, 0.9)) if s.notna().any() else "n/a"
+    sr = ", ".join(f"{int(k)} Hz: {v / len(df):.1%}" for k, v in df["sr"].value_counts().items() if pd.notna(k))
+    lines = [f"clips: {len(df):,} ({len(df) - len(ok):,} with errors, of which silent: {(df['error'] == 'silent').sum():,})",
+             f"header sample rate: {sr}"]
+    if len(ok):
+        bw = ok["brickwall_hz"]
+        lines += [
+            f"cutoff -40 dB (Hz, p10 / p50 / p90): {q(ok['cutoff40_hz'])}",
+            f"brickwall lowpass: {bw.notna().mean():.1%} of clips; below 7.8 kHz: {(bw < 7800).mean():.1%}; "
+            f"below 4.2 kHz (telephone-like): {(bw < 4200).mean():.1%}",
+            f"content above 8.2 kHz (lost by BAT's 16 kHz resampling): {(ok['cutoff40_hz'] > 8200).mean():.1%} of clips; "
+            f"energy share above 8 kHz p50 / p90: {q(ok['energy_above_8k'], '.2e').split(' / ', 1)[1]}",
+            f"onset rate (/s, p10 / p50 / p90): {q(ok['onset_rate_hz'], '.2f')}",
+            f"inter-onset intervals < 160 ms (one token), p50 over clips: {ok['ioi_below_token'].median():.1%}",
+            f"modulation power faster than one token, p50: {ok['mod_above_token'].median():.3f} "
+            f"(stationary noise ~0.63: compare classes, not absolutes)"]
+    return "\n".join("  " + l for l in lines)
+
+
+def read_shards(out_dir: Path) -> pd.DataFrame:
+    files = sorted((out_dir / "shards").glob("*.parquet")) + sorted((out_dir / "shards").glob("*.csv.gz"))
+    if not files:
+        sys.exit(f"no finished shard in {out_dir / 'shards'}")
+    return pd.concat([pd.read_parquet(f) if f.suffix == ".parquet" else pd.read_csv(f) for f in files],
+                     ignore_index=True)
+
+
 def shard_done(out_dir: Path, shard: int) -> bool:
     stem = out_dir / "shards" / f"{shard:05d}"
     return any(stem.with_suffix(s).exists() for s in (".parquet", ".csv.gz"))
@@ -228,8 +259,7 @@ def run_shard(out_dir: Path, shard: int, num_shards: int, workers: int) -> None:
     df = pd.DataFrame(rows)
     df.insert(0, "split", part["split"].values)
     final = write_table(df, stem)
-    n_err = (df["error"] != "").sum()
-    print(f"wrote {final} in {time.time() - t0:.0f} s ({n_err} files with errors)")
+    print(f"wrote {final} in {time.time() - t0:.0f} s. Shard summary:\n{summarize(df)}")
 
 
 def main() -> None:
@@ -246,6 +276,8 @@ def main() -> None:
     pm = sub.add_parser("missing", help="print the shards not done yet, as a --array list (empty if none)")
     pm.add_argument("--out-dir", type=Path, default=Path("study"))
     pm.add_argument("--num-shards", type=int, required=True)
+    ps = sub.add_parser("summary", help="headline numbers over the shards finished so far (any time)")
+    ps.add_argument("--out-dir", type=Path, default=Path("study"))
     pt = sub.add_parser("file", help="print the stats of one file (debugging)")
     pt.add_argument("path")
     args = p.parse_args()
@@ -256,6 +288,12 @@ def main() -> None:
         run_shard(args.out_dir, args.shard, args.num_shards, args.workers)
     elif args.cmd == "missing":
         print(",".join(str(i) for i in range(args.num_shards) if not shard_done(args.out_dir, i)))
+    elif args.cmd == "summary":
+        df = read_shards(args.out_dir)
+        n = len(list((args.out_dir / "shards").glob("*")))
+        print(f"{n} shard(s) in {args.out_dir / 'shards'}; by split: "
+              + ", ".join(f"{k} {v:,}" for k, v in df["split"].value_counts().items()))
+        print(summarize(df))
     else:
         for k, v in analyze_file(args.path).items():
             print(f"{k:>22}: {v}")
