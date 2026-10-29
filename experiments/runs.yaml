@@ -59,15 +59,26 @@ runs:
     overrides: {optimization_steps: 400, lr_warmup_steps: 40}
     time: "00:20:00"
 
-  # `time` is set from the calibration (xp.py refuses training runs without it)
-  - name: bat_as20k_ft                      # cheap reference, also the evaluation of every later variant
+  # `time` from the calibration (2026-10-29, H100, bf16 + compile): finetune batch 96 at 8.57 it/s,
+  # CGP batch 48 at 31 it/s, eval of the 18,886 clips ~25 s, ~2 min startup. ~25% margin on top.
+  - name: bat_as20k_ft                      # 40k steps, batch 48: ~12-16 it/s (extrapolated) -> ~50 min
     kind: finetune
     config: configs/as20k/as20k_finetune_config.yaml
+    time: "01:15:00"
 
-  - name: bat_as20k_cgp
+  - name: bat_as20k_cgp                     # 20k steps at 31 it/s -> ~11 min
     kind: finetune
     config: configs/as20k/as20k_cgp_config.yaml
+    time: "00:25:00"
 
-  - name: bat_as2m_ft                       # saves the finetuned weights (save_model: true in the config)
+  - name: bat_as2m_ft                       # 200k steps at 8.57 it/s -> 6.5 h; saves the finetuned weights
     kind: finetune
     config: configs/as2m/as2m_finetune_config.yaml
+    overrides: {save_interval: 10000}       # ~20 min lost at most on a timeout, fewer 1 GB writes
+    time: "08:15:00"
+
+  - name: bat_as2m_cgp                      # paper: 45.03; 200k steps, batch 96 (~2x the as20k CGP step) -> ~3.6 h
+    kind: finetune
+    config: configs/as2m/as2m_cgp_config.yaml
+    overrides: {save_interval: 10000}
+    time: "04:30:00"
