@@ -7,7 +7,11 @@
 #   sbatch --export=ALL,CONFIG=configs/as20k/as20k_finetune_config.yaml,RUN_DIR=runs/bat_as20k_ft,\
 #   DATA_DIR=/path/to/AudioSet,INIT_CKPT=$HOME/.cache/bat_ssl/BAT_base.pt slurm/finetune_bat.slurm
 # Optional: MODEL_NAME (default BAT), EXTRA (more main.py arguments, space-separated),
-# ENV_SCRIPT (sourced instead of the module load).
+# ENV_SCRIPT (sourced instead of the module load), TEST_WORKERS (default 6).
+#
+# Host memory: JZ gives ~2.5 GB per requested CPU (60 GB for 24). The 24 training workers stay
+# alive during evals, so the eval loader must stay small: 24 + 24 workers peaked at 77 GB and were
+# OOM-killed at the first eval; 6 eval workers read the 18,886 eval clips in ~1-2 min.
 
 #SBATCH --job-name=bat_finetune
 #SBATCH --account=soz@h100
@@ -56,6 +60,6 @@ python main.py -c "$CONFIG" \
     --model-name "${MODEL_NAME:-BAT}" \
     --vit-size b \
     --train-num-workers "$SLURM_CPUS_PER_TASK" \
-    --test-num-workers "$SLURM_CPUS_PER_TASK" \
+    --test-num-workers "${TEST_WORKERS:-6}" \
     "${INIT_ARGS[@]}" \
     "${EXTRA_SPLIT[@]}"
