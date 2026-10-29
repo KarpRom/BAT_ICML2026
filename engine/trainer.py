@@ -207,7 +207,9 @@ def run_experiment(args: argparse.Namespace, fold_idx: Optional[int] = None) -> 
                     best_score = val_metrics[metric_to_track]
                     torch.save(model.state_dict(), temp_save_path)
 
-            if track_test and (pbar.n % args.test_frequency == 0 or pbar.n == args.optimization_steps):
+            # The last step's test eval is the final one after the loop (same model unless a best
+            # val state is reloaded), run once the training workers are gone.
+            if track_test and pbar.n % args.test_frequency == 0 and pbar.n < args.optimization_steps:
                 test_msg = ""
                 model.eval()
                 test_metrics = eval_fn(model, test_loader)
@@ -231,7 +233,16 @@ def run_experiment(args: argparse.Namespace, fold_idx: Optional[int] = None) -> 
 
     pbar.close()
 
-    if Path(temp_save_path).exists():
+    # Training workers grow over a long run (24 of them reached ~70 GB on AS-20k after 40k steps):
+    # stop them before the final eval forks its own workers, or the job is OOM-killed (60 GB).
+    infinite_train_loader.close()
+    if getattr(train_loader, '_iterator', None) is not None:
+        train_loader._iterator._shutdown_workers()
+        train_loader._iterator = None
+    gc.collect()
+
+    last_step_model = not Path(temp_save_path).exists()
+    if not last_step_model:
         model.load_state_dict(torch.load(temp_save_path))
         Path(temp_save_path).unlink()
 
@@ -250,6 +261,9 @@ def run_experiment(args: argparse.Namespace, fold_idx: Optional[int] = None) -> 
 
     print(f"\n[{args.task.upper()}] Test Metrics:")
     for k, v in test_metrics.items(): print(f"  {k}: {v:.2f}")
+    if track_test and last_step_model:  # the last-step entry the loop no longer records
+        for k, v in test_metrics.items():
+            history[f'fold{fold_idx}_test_{k}' if fold_idx else f'test_{k}'].append(v)
 
     results = {'history': dict(history), 'test_metrics': test_metrics, 'args': vars(args)}
     if args.save_model: results['state'] = model.state_dict()

@@ -214,11 +214,12 @@ def get_dataloaders(args: argparse.Namespace,
                                 num_workers=args.val_num_workers, collate_fn=val_dataset.collate_fn,
                                 persistent_workers=True if args.val_num_workers > 0 else False)
 
+    # Test workers are not persistent: they exit after each eval instead of holding host memory
+    # next to the training workers for the rest of the run (JZ: 60 GB for 24 CPUs).
     if args.task != 'dcase2016_task2':
         test_loader = DataLoader(test_dataset, batch_size=1 if args.task == 'librispeech' else args.test_batch_size,
                                  shuffle=False, num_workers=args.test_num_workers,
-                                 collate_fn=test_dataset.collate_fn,
-                                 persistent_workers=True if args.test_num_workers > 0 else False)
+                                 collate_fn=test_dataset.collate_fn, persistent_workers=False)
 
     # Data Transforms
     if args.task in ['dcase2016_task2', 'librispeech']:
