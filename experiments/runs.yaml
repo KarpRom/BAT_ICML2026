@@ -115,12 +115,14 @@ runs:
     overrides: {optimization_steps: 600, lr_warmup_steps: 60}
     time: "00:40:00"
 
-  - name: c0_cont                           # 25k steps; `time` from calib_c0_cont
+  # calib_c0_cont (2026-10-29): 3.0 it/s at 10 s, batch 24 x 16 views, no OOM; 1.9M-file
+  # listing + startup ~45 s. 25k steps -> 2h20 + checkpoints every 2500 steps.
+  - name: c0_cont
     kind: pretrain
     config: configs/ssl_as2m_continue.yaml
     gpus: 1
     depends_on: [calib_c0_cont]
-    # time: "hh:mm:ss"                      # = 25000 / (it/s) + ~10% + 10 min startup
+    time: "02:50:00"
 
   - name: c0_cont_as20k_cgp                 # student weights (final_BAT_format.pt)
     kind: finetune
