@@ -13,6 +13,7 @@ num_workers: 24
 compile: true
 state_save_path: null
 save_interval: 2500
+keep_checkpoints: 1  # ~2 GB each; the final weights are exported separately (final_*BAT_format.pt)
 log_dir: logs/SSL_as2m_continue
 init_decoder: true
 

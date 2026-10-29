@@ -43,7 +43,7 @@ runs:
     kind: report
     study: run:study_audio
     strong_run: run:study_strong
-    # per_class_ap: run:bat_as2m_ft         # once Step 1 is done: links properties to BAT's per-class AP
+    per_class_ap: run:bat_as2m_ft           # links properties to BAT's per-class AP (AS-2M finetune)
 
   # ---------------- Step 1: reproduce BAT. Paper (arXiv 2602.16305v2, Table 5), 18,886 eval clips:
   # finetune AS-2M 48.85 / AS-20k 41.59 mAP; CGP AS-2M 45.03 / AS-20k 37.70 mAP.

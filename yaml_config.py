@@ -19,6 +19,8 @@ def get_ssl_config() -> argparse.Namespace:
     sys_group.add_argument('--device', default='cuda', type=str)
     sys_group.add_argument('--num-workers', default=32, type=int)
     sys_group.add_argument('--save-interval', type=int, help='frequency of steps to save a checkpoint.')
+    sys_group.add_argument('--keep-checkpoints', type=int, default=0,
+                           help='keep only the newest N step checkpoints in --log-dir (0: keep all)')
     sys_group.add_argument('--log-dir', type=str, default='logs/SSL', help='where checkpoints and loss history go.')
     sys_group.add_argument('--cache-dir', type=str, default=None,
                            help='where the audio file list is cached (default: --log-dir); share it between '

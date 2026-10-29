@@ -259,8 +259,9 @@ def sbatch_jobs(m: Manifest, name: str, dep_jobs: list) -> list:
     if kind == "pretrain":
         env.update(AUTO_RESUME="1", CONFIG=run["config"], LOG_DIR=str(d), INIT_CKPT=resolve_init(m, run) or "",
                    DATA_DIR=run.get("data_dir") or f"{audioset}/unbalanced_train_segments",
-                   CACHE_DIR=str(m.root / "_cache"), SAVE_INTERVAL=str(run.get("save_interval", 1000)),
-                   EXTRA=overrides(run))
+                   CACHE_DIR=str(m.root / "_cache"), EXTRA=overrides(run))
+        if run.get("save_interval"):  # else the config's save_interval
+            env["SAVE_INTERVAL"] = str(run["save_interval"])
         script = [run["script"]]
     elif kind == "finetune":
         env.update(CONFIG=run["config"], RUN_DIR=str(d), DATA_DIR=run.get("data_dir") or audioset,

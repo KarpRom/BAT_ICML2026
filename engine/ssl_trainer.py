@@ -351,6 +351,11 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
                         'optimized_steps': pbar.n,
                         'args': vars(args)
                     }, current_save_path)
+                    if args.keep_checkpoints:  # ~2 GB each: keep the newest N (resume needs the last)
+                        older = sorted(log_dir.glob(f'step(*)_{state_save_path}'),
+                                       key=lambda p: int(p.name[5:p.name.index(')')]))
+                        for p in older[:-args.keep_checkpoints]:
+                            p.unlink()
 
                     pd.DataFrame(history).to_csv(history_save_path, index=False)
 
