@@ -1,6 +1,6 @@
-# AS-2M: derived from configs/as20k/as20k_h2t_config.yaml (BAT author, GitHub issue: same template, AS-2M values
-# from the paper's Appendix A, Table 7). Lines tagged TABLE7 still hold the AS-20k value: check them
-# against Table 7 before the reproduction run. dataset_dir is passed on the CLI by scripts/xp.py.
+# AS-2M, from configs/as20k/as20k_h2t_config.yaml (BAT author's advice) with the AS-2M values of the BAT paper
+# (arXiv 2602.16305v2, Appendix A, Table 7). Paper result: finetune 48.85 mAP, CGP 45.03 mAP on AS-2M.
+# dataset_dir is passed on the CLI by scripts/xp.py.
 # ==========================================
 # System & Environment
 # ==========================================
@@ -39,27 +39,27 @@ num_heads: 12
 mlp_ratio: 4
 head: h2t
 use_cls_in_head: true
-num_prototypes: 0  # TABLE7
+num_prototypes: 0
 num_vqt: 0
 frame_wise_task: false
 head_norm: true
-head_dropout: 0.2  # TABLE7
+head_dropout: 0.2  # not in Table 7: AS-20k value
 
 # ==========================================
 # Training & Optimization
 # ==========================================
 finetune: false
-train_batch_size: 48  # TABLE7
+train_batch_size: 96
 val_batch_size: 0
 val_frequency: 0
-test_frequency: 20000  # TABLE7
+test_frequency: 200000
 test_batch_size: 64
-optimization_steps: 20000  # TABLE7
-lr: 1.0e-3  # TABLE7
-min_lr: 1.0e-6  # TABLE7
-lr_layer_decay: null  # TABLE7
-lr_warmup_steps: 500  # TABLE7
-weight_decay: 0.05  # TABLE7
+optimization_steps: 200000
+lr: 1.0e-3
+min_lr: 1.0e-6
+lr_layer_decay: null  # Table 7: N/A for probing
+lr_warmup_steps: 1000
+weight_decay: 0.05
 adam_beta1: 0.9
 adam_beta2: 0.999
 grad_accumulation_steps: 1
@@ -70,20 +70,20 @@ use_asymmetric_loss: true
 # Augmentation & Regularization
 # ==========================================
 dropout: 0.0
-path_dropout_rate: 0.0  # TABLE7
+path_dropout_rate: 0.0
 label_smoothing: null
 lasso_weight: 0.0001
 augment: false
-use_mixup: false  # TABLE7
-mixup_chance: 0  # TABLE7
-mixup_beta: 0  # TABLE7
+use_mixup: false  # Table 7: N/A for probing
+mixup_chance: 0  # Table 7: N/A for probing
+mixup_beta: 0  # Table 7: N/A for probing
 mixup_hard_label: false
 use_random_gain: false
 use_color_noise: false
 color_noise_chance: 0
 use_time_roll: false
 use_tf_mask: false
-freq_mask_param: 0  # TABLE7
-time_mask_param: 0  # TABLE7
-tf_mask_repeats: 0  # TABLE7
+freq_mask_param: 0  # Table 7: N/A for probing
+time_mask_param: 0  # Table 7: N/A for probing
+tf_mask_repeats: 0  # Table 7: N/A for probing
 mask_ratio: 0.0

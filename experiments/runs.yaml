@@ -38,7 +38,24 @@ runs:
     strong_run: run:study_strong
     # per_class_ap: run:bat_as2m_ft         # once Step 1 is done: links properties to BAT's per-class AP
 
-  # ---------------- Step 1: reproduce BAT (target: 48.85 mAP on AS-2M)
+  # ---------------- Step 1: reproduce BAT. Paper (arXiv 2602.16305v2, Table 5), 18,886 eval clips:
+  # finetune AS-2M 48.85 / AS-20k 41.59 mAP; CGP AS-2M 45.03 / AS-20k 37.70 mAP.
+  #
+  # Calibration first (keep reservations short): 400 steps + the full eval, to read the step rate
+  # (it/s on the tqdm line of the log) and the eval time; then set `time` on the real runs below.
+  - name: calib_as2m_ft                     # finetune speed: batch 96, the AS-2M recipe
+    kind: finetune
+    config: configs/as2m/as2m_finetune_config.yaml
+    overrides: {optimization_steps: 400, lr_warmup_steps: 40}
+    time: "00:30:00"
+
+  - name: calib_as20k_cgp                   # frozen-backbone probe speed: batch 48
+    kind: finetune
+    config: configs/as20k/as20k_cgp_config.yaml
+    overrides: {optimization_steps: 400, lr_warmup_steps: 40}
+    time: "00:20:00"
+
+  # `time` is set from the calibration (xp.py refuses training runs without it)
   - name: bat_as20k_ft                      # cheap reference, also the evaluation of every later variant
     kind: finetune
     config: configs/as20k/as20k_finetune_config.yaml

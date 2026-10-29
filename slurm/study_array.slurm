@@ -18,7 +18,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=40
 #SBATCH --hint=nomultithread
-#SBATCH --time=02:00:00
+#SBATCH --time=00:20:00
 #SBATCH --output=%x_%A_%a.out
 
 set -euo pipefail

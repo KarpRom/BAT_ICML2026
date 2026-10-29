@@ -35,12 +35,16 @@ import yaml
 REPO = Path(__file__).resolve().parent.parent
 JOB_PREFIX = "xp_"
 
+# Time requests stay close to what the jobs take (short jobs also start sooner: backfill).
+# Measured on JZ: a 39k-clip study shard ~3 min (+ ~5 min for the file list in task 0), the
+# strong-label stats ~3 min, the report a few minutes. Training runs have no default: each one
+# sets `time` in the manifest, from the measured step rate (see `calibrate` in runs.yaml).
 KIND_DEFAULTS = {
-    "pretrain": {"gpus": 4, "cpus_per_task": 24, "time": "20:00:00", "script": "slurm/pretrain_bat.slurm"},
-    "finetune": {"gpus": 1, "cpus_per_task": 24, "time": "20:00:00", "script": "slurm/finetune_bat.slurm"},
-    "study": {"cpus_per_task": 40, "time": "02:00:00", "script": "slurm/study_array.slurm"},
-    "strong": {"cpus_per_task": 4, "time": "01:00:00"},
-    "report": {"cpus_per_task": 4, "time": "01:00:00"},
+    "pretrain": {"gpus": 4, "cpus_per_task": 24, "script": "slurm/pretrain_bat.slurm"},
+    "finetune": {"gpus": 1, "cpus_per_task": 24, "script": "slurm/finetune_bat.slurm"},
+    "study": {"cpus_per_task": 40, "time": "00:20:00", "script": "slurm/study_array.slurm"},
+    "strong": {"cpus_per_task": 4, "time": "00:15:00"},
+    "report": {"cpus_per_task": 4, "time": "00:15:00"},
 }
 
 
@@ -285,6 +289,9 @@ def check_inputs(m: Manifest, name: str):
     if not audioset or "$" in audioset:
         problems.append("settings.audioset (or $AUDIOSET) is not set")
     if kind in ("pretrain", "finetune"):
+        if not run.get("time") and not run.get("chain"):
+            problems.append("no `time` (nor `chain`): set it from a measured step rate, e.g. with a short "
+                            "calibration run (overrides: {optimization_steps: 300}, time: '00:20:00')")
         if not (REPO / run["config"]).exists():
             problems.append(f"config not found: {run['config']}")
         init = resolve_init(m, run)

@@ -55,5 +55,6 @@ python main.py -c "$CONFIG" \
     --model-name "${MODEL_NAME:-BAT}" \
     --vit-size b \
     --train-num-workers "$SLURM_CPUS_PER_TASK" \
+    --test-num-workers "$SLURM_CPUS_PER_TASK" \
     "${INIT_ARGS[@]}" \
     "${EXTRA_SPLIT[@]}"

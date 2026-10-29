@@ -1,6 +1,6 @@
-# AS-2M: derived from configs/as20k/as20k_finetune_config.yaml (BAT author, GitHub issue: same template, AS-2M values
-# from the paper's Appendix A, Table 7). Lines tagged TABLE7 still hold the AS-20k value: check them
-# against Table 7 before the reproduction run. dataset_dir is passed on the CLI by scripts/xp.py.
+# AS-2M, from configs/as20k/as20k_finetune_config.yaml (BAT author's advice) with the AS-2M values of the BAT paper
+# (arXiv 2602.16305v2, Appendix A, Table 7). Paper result: finetune 48.85 mAP, CGP 45.03 mAP on AS-2M.
+# dataset_dir is passed on the CLI by scripts/xp.py.
 # ==========================================
 # System & Environment
 # ==========================================
@@ -39,52 +39,52 @@ num_heads: 12
 mlp_ratio: 4
 head: linear
 use_cls_in_head: true
-num_prototypes: 0  # TABLE7
+num_prototypes: 0
 num_vqt: 0
 frame_wise_task: false
 head_norm: true
-head_dropout: 0.2  # TABLE7
+head_dropout: 0.2  # not in Table 7: AS-20k value
 
 # ==========================================
 # Training & Optimization
 # ==========================================
 finetune: true
-train_batch_size: 48  # TABLE7
+train_batch_size: 96
 val_batch_size: 0
 val_frequency: 0
 test_batch_size: 64
-test_frequency: 40000  # TABLE7
-optimization_steps: 40000  # TABLE7
-lr: 5.0e-5  # TABLE7
-min_lr: 1.0e-6  # TABLE7
-lr_layer_decay: 0.75  # TABLE7
-lr_warmup_steps: 4000  # TABLE7
-weight_decay: 0.05  # TABLE7
+test_frequency: 50000
+optimization_steps: 200000
+lr: 5.0e-5
+min_lr: 1.0e-6
+lr_layer_decay: 0.75
+lr_warmup_steps: 20000
+weight_decay: 0.05
 adam_beta1: 0.9
 adam_beta2: 0.95
 grad_accumulation_steps: 1
 grad_clip_norm: null
-use_asymmetric_loss: true
+use_asymmetric_loss: false
 
 
 # ==========================================
 # Augmentation & Regularization
 # ==========================================
 dropout: 0.0
-path_dropout_rate: 0.1  # TABLE7
+path_dropout_rate: 0.1
 label_smoothing: null
 lasso_weight: 0
 augment: true
-use_mixup: true  # TABLE7
-mixup_chance: 0.9  # TABLE7
-mixup_beta: 0.8  # TABLE7
+use_mixup: true
+mixup_chance: 0.8
+mixup_beta: 0.8
 mixup_hard_label: false
 use_random_gain: false
 use_color_noise: false
 color_noise_chance: 0
 use_time_roll: false  # it applies to waveforms by default. ignore this.
 use_tf_mask: true
-freq_mask_param: 16  # TABLE7
-time_mask_param: 64  # TABLE7
-tf_mask_repeats: 2  # TABLE7
+freq_mask_param: 16
+time_mask_param: 64
+tf_mask_repeats: 2  # not in Table 7: AS-20k value
 mask_ratio: 0
