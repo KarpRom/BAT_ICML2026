@@ -79,7 +79,11 @@ class Manifest:
         if not self.root.is_absolute():
             self.root = REPO / self.root
         self.runs = {}
-        for r in data.get("runs") or []:
+        entries = []
+        for r in data.get("runs") or []:  # seeds: [a, b] -> one run <name>_s<seed> per seed
+            seeds = r.pop("seeds", None)
+            entries += [{**r, "name": f"{r['name']}_s{sd}", "seed": sd} for sd in seeds] if seeds else [r]
+        for r in entries:
             if r["name"] in self.runs:
                 sys.exit(f"duplicate run name in manifest: {r['name']}")
             if r.get("kind") not in KIND_DEFAULTS:
@@ -240,6 +244,8 @@ def sbatch_jobs(m: Manifest, name: str, dep_jobs: list) -> list:
     env = {"ENV_SCRIPT": s.get("env_script") or ""}
     if not env["ENV_SCRIPT"]:
         env.pop("ENV_SCRIPT")
+    if run.get("seed") is not None:  # read by engine.utils.seed_everything (default 32)
+        env["PYTHONHASHSEED"] = str(run["seed"])
     if gpu:
         base += [f"--gres=gpu:{run['gpus']}", f"--ntasks-per-node={run['gpus']}"]
     chain = int(run.get("chain") or 0)
@@ -406,6 +412,23 @@ def cmd_results(m: Manifest, filt: str) -> None:
     lines = ["| " + " | ".join(keys) + " |", "|" + "---|" * len(keys)]
     for r in rows:
         lines.append("| " + " | ".join(f"{r[k]:.2f}" if isinstance(r.get(k), float) else str(r.get(k, "")) for k in keys) + " |")
+    # Seed groups: <name>_s<seed> runs together with <name> itself (the default seed, 32).
+    groups = {}
+    for r in rows:
+        groups.setdefault(re.sub(r"_s\d+$", "", r["run"]), []).append(r)
+    groups = {g: rs for g, rs in groups.items() if len(rs) > 1}
+    if groups:
+        metric_keys = [k for k in keys[2:] if all(isinstance(r.get(k), float) for rs in groups.values() for r in rs)]
+        lines += ["", "Over seeds (mean ± std, n):", "",
+                  "| group | n | " + " | ".join(metric_keys) + " |", "|" + "---|" * (len(metric_keys) + 2)]
+        for g, rs in groups.items():
+            cells = []
+            for k in metric_keys:
+                v = [r[k] for r in rs]
+                mu = sum(v) / len(v)
+                sd = (sum((x - mu) ** 2 for x in v) / (len(v) - 1)) ** 0.5
+                cells.append(f"{mu:.2f} ± {sd:.2f}")
+            lines.append(f"| {g} | {len(rs)} | " + " | ".join(cells) + " |")
     print("\n".join(lines))
     out = m.root / "results.md"
     out.parent.mkdir(parents=True, exist_ok=True)

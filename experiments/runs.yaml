@@ -9,6 +9,9 @@
 #   init_ema    true: with init run:..., use the EMA teacher weights instead of the student's
 #   overrides   {cli_option: value} passed to pretrain.py / main.py (true -> bare flag)
 #   depends_on  [runs] that must finish first (init/per_class_ap/study: run:... are added automatically)
+#   seed        training seed (PYTHONHASHSEED; the code defaults to 32 when unset)
+#   seeds       [a, b, ...]: expands into one run per seed, named <name>_s<seed>; `results` then
+#               also prints mean ± std over <name>_s* and <name> (the latter counted as seed 32)
 #   gpus, cpus_per_task, time, qos, account   SLURM resources (defaults per kind in scripts/xp.py)
 #   chain       N: run as N chained 2 h jobs on the dev QOS instead of one `time` job
 #   data_dir    dataset path if not the AudioSet default
@@ -67,6 +70,21 @@ runs:
     time: "01:15:00"
 
   - name: bat_as20k_cgp                     # 20k steps at 31 it/s -> ~11 min
+    kind: finetune
+    config: configs/as20k/as20k_cgp_config.yaml
+    time: "00:25:00"
+
+  # Seed spread of the AS-20k references (seed 32 = the runs above): tells whether the -0.4 mAP
+  # gap to the paper is noise, and the smallest difference between variants worth believing.
+  # Measured: finetune 14.1 it/s (40k steps ~47 min), CGP 24 it/s (20k steps ~14 min).
+  - name: bat_as20k_ft
+    seeds: [33, 34]
+    kind: finetune
+    config: configs/as20k/as20k_finetune_config.yaml
+    time: "01:05:00"
+
+  - name: bat_as20k_cgp
+    seeds: [33, 34]
     kind: finetune
     config: configs/as20k/as20k_cgp_config.yaml
     time: "00:25:00"
