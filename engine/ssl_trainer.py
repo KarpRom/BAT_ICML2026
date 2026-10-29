@@ -19,6 +19,7 @@ from typing import Tuple, Optional
 import argparse
 import contextlib
 from data.bat_audio_datasets import SSLAudioSet, SSLDataTransforms
+from data.ssl_augment import WaveformAugment
 from models import MLR_Student, MLR_Teacher
 from .optim import EMA_Scheduler, RiseRunDecay, ema_update
 from .utils import infinite_batch_iterator
@@ -95,15 +96,21 @@ def ssl_train_step(student: torch.nn.Module,
                    num_views: int = 16,
                    device: int = 0,
                    accumulation_steps: int = 1,
-                   is_accumulating: bool = False) -> Tuple[float, float]:
+                   is_accumulating: bool = False,
+                   wave_augment: Optional[torch.nn.Module] = None) -> Tuple[float, float]:
     """
     Executes a single step of Self-Supervised Learning (SSL) pretraining.
     Computes global and local representation losses between the student and teacher networks,
     performs backpropagation, and updates the teacher via Exponential Moving Average (EMA).
+    wave_augment: applied to each student view's waveform (the teacher keeps the clean clip).
     """
     with torch.no_grad():
         # x_views.shape = (V=batch_size*views, 1, T, F)
-        x_views, mask_info = data_transforms(x, num_views, mask_ratio=mask_ratio)
+        if wave_augment is not None:  # same view order as repeat_interleave in data_transforms
+            x_views, mask_info = data_transforms(wave_augment(x.repeat_interleave(num_views, dim=0)),
+                                                 num_views=1, mask_ratio=mask_ratio)
+        else:
+            x_views, mask_info = data_transforms(x, num_views, mask_ratio=mask_ratio)
         x_target, _ = data_transforms(x, num_views=1, mask_ratio=0)  # Get clean target
 
     # we don't need to synchronize devices during gradient accumulation
@@ -188,6 +195,8 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
                                         n_mels=args.n_mels, time_frame_size=args.time_frame_size,
                                         num_time_patches=args.time_frame_size // args.patch_size,
                                         num_freq_patches=args.n_mels // args.patch_size).to(local_rank)
+    wave_augment = WaveformAugment(sr=args.sr, p_filter=args.aug_p_filter, p_noise=args.aug_p_noise,
+                                   snr_db=(args.aug_snr_min, args.aug_snr_max)) if args.wave_aug else None
     # Model
     student = MLR_Student(input_shape=(args.time_frame_size, args.n_mels),
                           patch_size=(args.patch_size, args.patch_size),
@@ -318,7 +327,8 @@ def run_ssl_experiment(args: argparse.Namespace) -> None:
             student=student, teacher=teacher, x=x, optimizer=optimizer, data_transforms=data_transforms,
             scheduler=scheduler, ema_scheduler=ema_scheduler, clip_norm=args.clip_norm,
             mask_ratio=args.mask_ratio, num_views=args.num_views, device=local_rank,
-            accumulation_steps=args.grad_accumulation_steps, is_accumulating=is_accumulating
+            accumulation_steps=args.grad_accumulation_steps, is_accumulating=is_accumulating,
+            wave_augment=wave_augment
         )
 
         temp_g_loss += g_loss

@@ -151,3 +151,34 @@ runs:
     config: configs/as20k/as20k_finetune_config.yaml
     init: run:c0_cont
     time: "01:05:00"
+
+  # AUG: filter + noise on each student view's waveform, clean teacher (data/ssl_augment.py).
+  # Same recipe and steps as c0_cont; compare to c0_cont's evals. Calibrate first: 384 waveform
+  # FFTs + mels per step instead of 24 (speed and memory unknown).
+  - name: calib_aug
+    kind: pretrain
+    config: configs/ssl_as2m_continue.yaml
+    gpus: 1
+    overrides: {optimization_steps: 600, lr_warmup_steps: 60, wave_aug: true}
+    time: "00:20:00"
+
+  - name: aug
+    kind: pretrain
+    config: configs/ssl_as2m_continue.yaml
+    gpus: 1
+    overrides: {wave_aug: true}
+    depends_on: [calib_aug]
+    time: "02:50:00"                        # as c0_cont; adjust if calib_aug is slower than 3.0 it/s
+
+  - name: aug_as20k_cgp
+    kind: finetune
+    config: configs/as20k/as20k_cgp_config.yaml
+    init: run:aug
+    time: "00:25:00"
+
+  - name: aug_ema_as20k_cgp
+    kind: finetune
+    config: configs/as20k/as20k_cgp_config.yaml
+    init: run:aug
+    init_ema: true
+    time: "00:25:00"

@@ -76,6 +76,12 @@ def get_ssl_config() -> argparse.Namespace:
     aug_group = parser.add_argument_group('Augmentation & Regularization')
     aug_group.add_argument('--mask-ratio', default=0.8, type=float)
     aug_group.add_argument('--num-views', default=16, type=int, help='number of differently masked views.')
+    aug_group.add_argument('--wave-aug', action='store_true',
+                           help='filter + noise augmentation of each student view (data/ssl_augment.py)')
+    aug_group.add_argument('--aug-p-filter', default=0.5, type=float, help='with --wave-aug: P(filter) per view')
+    aug_group.add_argument('--aug-p-noise', default=0.5, type=float, help='with --wave-aug: P(noise) per view')
+    aug_group.add_argument('--aug-snr-min', default=5., type=float, help='with --wave-aug: noise SNR range (dB)')
+    aug_group.add_argument('--aug-snr-max', default=40., type=float)
 
     # parse config file first, then we use the ones from command line to override them
     args, _ = parser.parse_known_args()
