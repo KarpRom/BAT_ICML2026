@@ -95,6 +95,15 @@ runs:
     overrides: {save_interval: 10000}       # ~20 min lost at most on a timeout, fewer 1 GB writes
     time: "08:15:00"
 
+  # bat_as2m_ft gave 47.85 (paper 48.85), converged for its schedule (+2.23 / +0.87 / +0.23 mAP per
+  # 50k steps, train loss flat from 150k at the LR floor). Is the gap training length? Same recipe,
+  # 2x the steps (warmup unchanged): 400k at 8.4 it/s -> 13h15 + evals.
+  - name: bat_as2m_ft_400k
+    kind: finetune
+    config: configs/as2m/as2m_finetune_config.yaml
+    overrides: {optimization_steps: 400000, save_interval: 10000}
+    time: "14:30:00"
+
   - name: bat_as2m_cgp                      # paper: 45.03; 200k steps, batch 96 (~2x the as20k CGP step) -> ~3.6 h
     kind: finetune
     config: configs/as2m/as2m_cgp_config.yaml
