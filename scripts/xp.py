@@ -52,15 +52,32 @@ def expand(v):
     return os.path.expanduser(os.path.expandvars(v)) if isinstance(v, str) else v
 
 
+def load_env_script(path: Path) -> None:
+    """Variables exported by the jobs' env script (e.g. AUDIOSET), so that the manifest's $VARS
+    expand here exactly as in the jobs. Sourced in a throwaway subshell; nothing else changes."""
+    res = subprocess.run(["bash", "-c", f"source {shlex.quote(str(path))} >/dev/null 2>&1; env -0"],
+                         capture_output=True, cwd=REPO)
+    for item in res.stdout.split(b"\0"):
+        k, sep, v = item.decode(errors="replace").partition("=")
+        if sep and not k.startswith(("BASH_FUNC_", "_")):
+            os.environ[k] = v
+
+
 class Manifest:
     def __init__(self, path: Path):
         data = yaml.safe_load(path.read_text())
-        self.settings = {k: expand(v) for k, v in (data.get("settings") or {}).items()}
+        raw = data.get("settings") or {}
+        env_script = expand(raw.get("env_script"))
+        if env_script:
+            env_script = Path(env_script) if Path(env_script).is_absolute() else REPO / env_script
+            if env_script.exists():
+                load_env_script(env_script)
+        self.settings = {k: expand(v) for k, v in raw.items()}
+        if env_script:
+            self.settings["env_script"] = str(env_script)
         self.root = Path(self.settings.get("root", "runs"))
         if not self.root.is_absolute():
             self.root = REPO / self.root
-        if self.settings.get("env_script") and not Path(self.settings["env_script"]).is_absolute():
-            self.settings["env_script"] = str(REPO / self.settings["env_script"])
         self.runs = {}
         for r in data.get("runs") or []:
             if r["name"] in self.runs:
@@ -293,6 +310,11 @@ def check_inputs(m: Manifest, name: str):
     env_script = m.settings.get("env_script")
     if env_script and not Path(env_script).exists():
         problems.append(f"env_script not found: {env_script}")
+    if kind in ("finetune", "report") and audioset and not run.get("data_dir"):
+        missing = [f for f in ("ontology.json", "eval_segments.csv", "balanced_train_segments.csv",
+                               "unbalanced_train_segments.csv") if not (Path(audioset) / f).exists()]
+        if missing:
+            problems.append(f"{audioset} lacks {', '.join(missing)} (label files: see settings.audioset)")
     if kind in ("pretrain", "finetune"):
         if not run.get("time") and not run.get("chain"):
             problems.append("no `time` (nor `chain`): set it from a measured step rate, e.g. with a short "

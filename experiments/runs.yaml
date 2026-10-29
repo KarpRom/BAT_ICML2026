@@ -13,11 +13,14 @@
 #   chain       N: run as N chained 2 h jobs on the dev QOS instead of one `time` job
 #   data_dir    dataset path if not the AudioSet default
 #
-# Paths may use environment variables ($WORK, $SCRATCH, $AUDIOSET...).
+# Paths may use environment variables ($WORK, $SCRATCH, $AUDIOSET...). Machine-specific ones
+# (AUDIOSET, ...) are exported by env.sh: xp.py sources it before expanding this file, so the
+# values are the same here and in the jobs whatever the login shell has.
 
 settings:
   root: $SCRATCH/bat_runs                   # run directories (checkpoints are big: $SCRATCH)
-  audioset: $AUDIOSET                       # AudioSet root: eval_segments/, *_segments.csv, ontology.json
+  audioset: $AUDIOSET                       # AudioSet root (*_segments/, *_segments.csv, ontology.json),
+                                            # exported by env.sh (xp.py reads it from there)
   bat_base: $HOME/.cache/bat_ssl/BAT_base.pt
   account: soz@h100
   cpu_account: soz@cpu

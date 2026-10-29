@@ -8,6 +8,10 @@
 # (study / report). It needs a Python with torch, torchaudio, librosa, soundfile, scikit-learn,
 # pandas, pyyaml, tqdm (+ pyarrow for the study).
 
+# Machine-specific paths used by experiments/runs.yaml ($AUDIOSET). scripts/xp.py sources this file
+# too (in a subshell) before expanding the manifest, so set them here and nowhere else.
+export AUDIOSET=/path/to/audioset_root   # *_segments/ (audio), *_segments.csv, ontology.json, strong/
+
 module purge
 module load arch/h100                # H100 nodes: their own module tree (else torch fails on libmpi)
 module load pytorch-gpu/py3/2.8.0
