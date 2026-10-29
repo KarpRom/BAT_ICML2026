@@ -1,0 +1,65 @@
+# C0-cont: continued BAT pretraining on AudioSet-2M from BAT_base.pt, nothing changed. The control
+# every variant (SRL, masking, front end, augmentations...) is compared against, at equal steps.
+# Same low-LR recipe as ssl_audioset_lowlr_w512_dec.yaml (encoder + decoder warm-started), but
+# the full 10 s window of the released model (time_frame_size 1024, 64 x 8 = 512 tokens).
+#
+# dataset_dir, init_checkpoint and log_dir are passed on the CLI by slurm/pretrain_bat.slurm.
+#
+# ==========================================
+# System & Environment
+# ==========================================
+device: cuda
+num_workers: 24
+compile: true
+state_save_path: null
+save_interval: 2500
+log_dir: logs/SSL_as2m_continue
+init_decoder: true
+
+# ==========================================
+# Data & Features
+# ==========================================
+sr: 16000
+n_fft: 1024
+hop_length: 160
+n_mels: 128
+time_frame_size: 1024
+
+# ==========================================
+# Model Architecture
+# ==========================================
+patch_size: 16
+dim: 768
+depth: 12
+num_heads: 12
+mlp_ratio: 4
+decoder_depth: 6
+decoder_heads: 12
+decoder_mlp_ratio: 4
+decoder_dim: 768
+
+# ==========================================
+# Training & Optimization
+# ==========================================
+# 24 clips x 16 views per step on 1 GPU (BAT's own per-GPU batch, ssl.yaml). The explicit
+# attention OOM'd at 1024 frames; with SDPA it should fit. If not: batch_size 12 +
+# grad_accumulation_steps 2 (same optimization).
+batch_size: 24
+grad_accumulation_steps: 1
+optimization_steps: 25000
+lr: 5.0e-5
+min_lr: 1.0e-6
+lr_warmup_steps: 2500
+weight_decay: 0.05
+adam_beta1: 0.9
+adam_beta2: 0.95
+ema_warmup_steps: 25000
+ema_decay_start: 0.9998
+ema_decay_end: 0.99999
+clip_norm: null
+
+# ==========================================
+# Augmentation & Regularization
+# ==========================================
+mask_ratio: 0.8
+num_views: 16

@@ -100,3 +100,43 @@ runs:
     config: configs/as2m/as2m_cgp_config.yaml
     overrides: {save_interval: 10000}
     time: "04:30:00"
+
+  # ---------------- Approaches: continued pretraining from BAT_base.pt, evaluated on AS-20k.
+  # C0-cont = the control (no change, same steps); every variant is compared to it, not to
+  # BAT_base. 1 GPU, 24 clips x 16 views per step (configs/ssl_as2m_continue.yaml).
+  #
+  # Calibration first: 600 steps at 10 s (never run at 1024 frames with SDPA yet): read the it/s
+  # on the "SSL Pretraining" tqdm line and the peak memory, then set c0_cont's `time`.
+  # The first job also lists the 1.9M wavs (~5 min); later runs reuse <root>/_cache.
+  - name: calib_c0_cont
+    kind: pretrain
+    config: configs/ssl_as2m_continue.yaml
+    gpus: 1
+    overrides: {optimization_steps: 600, lr_warmup_steps: 60}
+    time: "00:40:00"
+
+  - name: c0_cont                           # 25k steps; `time` from calib_c0_cont
+    kind: pretrain
+    config: configs/ssl_as2m_continue.yaml
+    gpus: 1
+    depends_on: [calib_c0_cont]
+    # time: "hh:mm:ss"                      # = 25000 / (it/s) + ~10% + 10 min startup
+
+  - name: c0_cont_as20k_cgp                 # student weights (final_BAT_format.pt)
+    kind: finetune
+    config: configs/as20k/as20k_cgp_config.yaml
+    init: run:c0_cont
+    time: "00:25:00"
+
+  - name: c0_cont_ema_as20k_cgp             # EMA teacher weights: which of the two to keep
+    kind: finetune
+    config: configs/as20k/as20k_cgp_config.yaml
+    init: run:c0_cont
+    init_ema: true
+    time: "00:25:00"
+
+  - name: c0_cont_as20k_ft
+    kind: finetune
+    config: configs/as20k/as20k_finetune_config.yaml
+    init: run:c0_cont
+    time: "01:05:00"
