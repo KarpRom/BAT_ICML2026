@@ -13,8 +13,6 @@ from torch.utils.data import DataLoader
 from scipy.signal import medfilt
 from sklearn.metrics import average_precision_score, f1_score
 import librosa
-import jiwer
-import sed_eval
 import torchaudio
 from torchaudio.transforms import MelSpectrogram, AmplitudeToDB
 from data import load_dcase2016_task2_json_to_df, CharTokenizer
@@ -99,6 +97,7 @@ def evaluate_asr(model: torch.nn.Module,
             log_probs = model(x.to(device)).transpose(0, 1)  # T, B, C -> B, T, C
         preds.extend(greedy_decode(log_probs, tokenizer))
         refs.extend([tokenizer.decode(y[i][:target_length[i]].tolist(), ignore_blanks=True) for i in range(y.shape[0])])
+    import jiwer  # only the ASR task needs it: environments without it still run the other tasks
     return {'wer': jiwer.wer(refs, preds) * 100, 'cer': jiwer.cer(refs, preds) * 100}
 
 
@@ -161,6 +160,7 @@ def eval_test_set_dcase(data_dir: Union[str, Path],
                         legacy: bool = False,
                         model_name: Optional[str] = None) -> Dict[str, float]:
     """Fully evaluates the DCASE test set, including calculating standard Sound Event Detection (SED) metrics."""
+    import sed_eval  # only the SED task needs it
     test_df = load_dcase2016_task2_json_to_df(root_path=data_dir, split='test')
     grouped_events = test_df.groupby('filename')
     filenames = list(grouped_events.groups.keys())

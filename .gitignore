@@ -4,3 +4,6 @@
 .fewword/scratch/
 .fewword/index/
 bat_icml2026.egg-info/
+
+# per-machine job environment (template: env.example.sh)
+env.sh

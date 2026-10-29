@@ -58,6 +58,7 @@ if [ -n "${ENV_SCRIPT:-}" ]; then
     source "$ENV_SCRIPT"
 else
     module purge
+    module load arch/h100  # H100 nodes have their own module tree: without it torch fails on libmpi.so.40
     module load pytorch-gpu/py3/2.8.0
 fi
 

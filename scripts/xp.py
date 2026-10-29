@@ -59,6 +59,8 @@ class Manifest:
         self.root = Path(self.settings.get("root", "runs"))
         if not self.root.is_absolute():
             self.root = REPO / self.root
+        if self.settings.get("env_script") and not Path(self.settings["env_script"]).is_absolute():
+            self.settings["env_script"] = str(REPO / self.settings["env_script"])
         self.runs = {}
         for r in data.get("runs") or []:
             if r["name"] in self.runs:
@@ -288,6 +290,9 @@ def check_inputs(m: Manifest, name: str):
     audioset = run.get("audioset") or m.settings.get("audioset")
     if not audioset or "$" in audioset:
         problems.append("settings.audioset (or $AUDIOSET) is not set")
+    env_script = m.settings.get("env_script")
+    if env_script and not Path(env_script).exists():
+        problems.append(f"env_script not found: {env_script}")
     if kind in ("pretrain", "finetune"):
         if not run.get("time") and not run.get("chain"):
             problems.append("no `time` (nor `chain`): set it from a measured step rate, e.g. with a short "

@@ -21,7 +21,8 @@ settings:
   bat_base: $HOME/.cache/bat_ssl/BAT_base.pt
   account: soz@h100
   cpu_account: soz@cpu
-  env_script: null                          # sourced instead of `module load pytorch-gpu/py3/2.8.0`
+  env_script: env.sh                        # sourced by every job instead of the default module load;
+                                            # relative to the repo root, not versioned (env.example.sh)
 
 runs:
   # ---------------- Step 0: what is worth changing (CPU only)
