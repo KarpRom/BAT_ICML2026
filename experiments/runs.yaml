@@ -182,3 +182,55 @@ runs:
     init: run:aug
     init_ema: true
     time: "00:25:00"
+
+  # c0_cont LOWERS AS-20k CGP (student 36.57, EMA 36.96 vs BAT_base 37.23); AUG on top: 36.78 / 37.04.
+  # Suspects: lr 5e-5 is 50x the end LR of BAT's pretraining (1e-6), and the teacher restarts at
+  # EMA 0.9998 (half-life ~3.5k steps vs ~69k at 0.99999), so targets drift with the perturbed
+  # student. A continuation recipe must not degrade BAT_base before variants are tested on it.
+  # ema 1.0 = frozen teacher = BAT_base (its EMA export is BAT_base itself: student CGP only).
+  # Measured: 25k steps 2h14-2h16, CGP 14.5 min.
+  - name: c1_lowlr
+    kind: pretrain
+    config: configs/ssl_as2m_continue.yaml
+    gpus: 1
+    overrides: {lr: 1.0e-5}
+    time: "02:35:00"
+
+  - name: c1_lowlr_as20k_cgp
+    kind: finetune
+    config: configs/as20k/as20k_cgp_config.yaml
+    init: run:c1_lowlr
+    time: "00:20:00"
+
+  - name: c1_lowlr_ema_as20k_cgp
+    kind: finetune
+    config: configs/as20k/as20k_cgp_config.yaml
+    init: run:c1_lowlr
+    init_ema: true
+    time: "00:20:00"
+
+  - name: c1_frozen
+    kind: pretrain
+    config: configs/ssl_as2m_continue.yaml
+    gpus: 1
+    overrides: {ema_decay_start: 1.0, ema_decay_end: 1.0}
+    time: "02:35:00"
+
+  - name: c1_frozen_as20k_cgp
+    kind: finetune
+    config: configs/as20k/as20k_cgp_config.yaml
+    init: run:c1_frozen
+    time: "00:20:00"
+
+  - name: c1_lowlr_frozen
+    kind: pretrain
+    config: configs/ssl_as2m_continue.yaml
+    gpus: 1
+    overrides: {lr: 1.0e-5, ema_decay_start: 1.0, ema_decay_end: 1.0}
+    time: "02:35:00"
+
+  - name: c1_lowlr_frozen_as20k_cgp
+    kind: finetune
+    config: configs/as20k/as20k_cgp_config.yaml
+    init: run:c1_lowlr_frozen
+    time: "00:20:00"
