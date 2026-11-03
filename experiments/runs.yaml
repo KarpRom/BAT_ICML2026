@@ -252,3 +252,19 @@ runs:
     config: configs/as20k/as20k_cgp_config.yaml
     init: run:c2_zero
     time: "00:20:00"
+
+  # c2_zero: 37.27 (= BAT_base): the export path is fine, training itself degrades. BAT was
+  # pretrained on 4 GPUs (24 x 4 = 96 clips per step); ours used 1 GPU (24). Same best recipe
+  # (lr 1e-5, frozen teacher) at batch 96: 4 ranks x 24, same 25k steps (4x the clips).
+  - name: c3_b96
+    kind: pretrain
+    config: configs/ssl_as2m_continue.yaml
+    gpus: 4
+    overrides: {lr: 1.0e-5, ema_decay_start: 1.0, ema_decay_end: 1.0}
+    time: "02:50:00"
+
+  - name: c3_b96_as20k_cgp
+    kind: finetune
+    config: configs/as20k/as20k_cgp_config.yaml
+    init: run:c3_b96
+    time: "00:20:00"
