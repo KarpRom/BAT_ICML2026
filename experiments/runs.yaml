@@ -234,3 +234,21 @@ runs:
     config: configs/as20k/as20k_cgp_config.yaml
     init: run:c1_lowlr_frozen
     time: "00:20:00"
+
+  # c1 results (AS-20k CGP): lowlr 36.64 / EMA 36.99, frozen 36.98, lowlr_frozen 37.07: all below
+  # BAT_base 37.23, even with lr 1e-5 and the teacher fixed at BAT_base. Lowering the lr barely
+  # moves the student (36.64 vs 36.57). Sanity check first: lr 0 must export BAT_base unchanged and
+  # give 37.23 CGP; otherwise the loss comes from the load/export path, not from training.
+  - name: c2_zero
+    kind: pretrain
+    config: configs/ssl_as2m_continue.yaml
+    gpus: 1
+    overrides: {optimization_steps: 200, lr_warmup_steps: 20, lr: 0.0, min_lr: 0.0,
+                ema_decay_start: 1.0, ema_decay_end: 1.0}
+    time: "00:15:00"
+
+  - name: c2_zero_as20k_cgp
+    kind: finetune
+    config: configs/as20k/as20k_cgp_config.yaml
+    init: run:c2_zero
+    time: "00:20:00"
