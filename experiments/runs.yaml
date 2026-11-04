@@ -268,3 +268,19 @@ runs:
     config: configs/as20k/as20k_cgp_config.yaml
     init: run:c3_b96
     time: "00:20:00"
+
+  # Does the drop happen at once (restart: fresh AdamW state, warmup) or build up over the 25k
+  # steps? c1_lowlr_frozen's recipe, 2.5k steps (schedule scaled down: warmup 250).
+  - name: c4_short
+    kind: pretrain
+    config: configs/ssl_as2m_continue.yaml
+    gpus: 1
+    overrides: {optimization_steps: 2500, lr_warmup_steps: 250, lr: 1.0e-5,
+                ema_decay_start: 1.0, ema_decay_end: 1.0}
+    time: "00:25:00"
+
+  - name: c4_short_as20k_cgp
+    kind: finetune
+    config: configs/as20k/as20k_cgp_config.yaml
+    init: run:c4_short
+    time: "00:20:00"
