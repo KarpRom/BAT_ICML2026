@@ -85,6 +85,8 @@ class Mlp(nn.Module):
 
 class Attention(nn.Module):
     """Multi-Head Self Attention (MHSA) mechanism with optional gating and VQT support."""
+    fused = True  # False: the original explicit softmax(QK^T)V (pretrain.py --explicit-attn)
+
     def __init__(self, dim: int, num_heads: int = 12, qkv_bias: bool = True, proj_bias: bool = True, attn_drop: float = 0., proj_drop: float = 0., use_gate: bool = True):
         super().__init__()
         assert dim % num_heads == 0, 'dim should be divisible by num_heads'
@@ -104,11 +106,17 @@ class Attention(nn.Module):
         k = k[:, :, num_vqt:, :]
         v = v[:, :, num_vqt:, :]
 
-        # fused attention (flash / memory-efficient kernels): the N x N' weights are never
-        # materialized, so they are not returned either (no caller uses them)
-        attn_out = F.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop.p if self.training else 0.,
-                                                  scale=self.scale)  # B, H, N, D
-        attn = None
+        if self.fused:
+            # fused attention (flash / memory-efficient kernels): the N x N' weights are never
+            # materialized, so they are not returned either (no caller uses them)
+            attn_out = F.scaled_dot_product_attention(q, k, v, dropout_p=self.attn_drop.p if self.training else 0.,
+                                                      scale=self.scale)  # B, H, N, D
+            attn = None
+        else:
+            attn = (q * self.scale) @ k.transpose(-2, -1)  # B, H, N, D @ B, H, D, N' -> B, H, N, N'
+            attn = attn.softmax(dim=-1)
+            attn = self.attn_drop(attn)
+            attn_out = attn @ v  # B, H, N, N' @ B, H, N', D -> B, H, N, D
         attn_out = attn_out.transpose(1, 2).reshape(B, N, C)
         if self.gate:
             g = self.gate(x).sigmoid()

@@ -284,3 +284,38 @@ runs:
     config: configs/as20k/as20k_cgp_config.yaml
     init: run:c4_short
     time: "00:20:00"
+
+  # c3_b96 37.10 (= batch 24's 37.07: not the batch). c4_short 37.17: -0.1 after 2.5k steps,
+  # -0.16 after 25k. Two checks on c4_short's recipe:
+  # - pretraining run-to-run noise: same run, another seed (c4_short = seed 32)
+  # - the only code change vs upstream: SDPA -> BAT's explicit attention. It OOM'd at batch 24
+  #   (1024 frames), so 12 x 2 accumulation steps (same optimization: no batch statistics)
+  - name: c4_short
+    seeds: [33]
+    kind: pretrain
+    config: configs/ssl_as2m_continue.yaml
+    gpus: 1
+    overrides: {optimization_steps: 2500, lr_warmup_steps: 250, lr: 1.0e-5,
+                ema_decay_start: 1.0, ema_decay_end: 1.0}
+    time: "00:25:00"
+
+  - name: c4_short_s33_as20k_cgp
+    kind: finetune
+    config: configs/as20k/as20k_cgp_config.yaml
+    init: run:c4_short_s33
+    time: "00:20:00"
+
+  - name: c5_explicit
+    kind: pretrain
+    config: configs/ssl_as2m_continue.yaml
+    gpus: 1
+    overrides: {optimization_steps: 2500, lr_warmup_steps: 250, lr: 1.0e-5,
+                ema_decay_start: 1.0, ema_decay_end: 1.0, explicit_attn: true,
+                batch_size: 12, grad_accumulation_steps: 2}
+    time: "00:45:00"
+
+  - name: c5_explicit_as20k_cgp
+    kind: finetune
+    config: configs/as20k/as20k_cgp_config.yaml
+    init: run:c5_explicit
+    time: "00:20:00"

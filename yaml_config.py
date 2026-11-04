@@ -53,6 +53,8 @@ def get_ssl_config() -> argparse.Namespace:
                                   '(e.g. BAT_base.pt) instead of random init.')
     model_group.add_argument('--init-decoder', action='store_true',
                              help='with --init-checkpoint: also load its decoder (default: random decoder)')
+    model_group.add_argument('--explicit-attn', action='store_true',
+                             help="BAT's original explicit attention instead of SDPA (more memory)")
 
     train_group = parser.add_argument_group('Training & Optimization')
     train_group.add_argument('--resume-checkpoint', type=str, default=None,
